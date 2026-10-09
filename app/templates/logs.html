@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+{% set st = sync_status() %}
+<div class="head">
+  <h1>Sincronização</h1>
+  <nav class="seg" aria-label="Origem">
+    <a href="/logs" {% if not origem %}aria-current="true"{% endif %}>Todas</a>
+    {% for o in origens %}<a href="/logs?origem={{ o }}" {% if origem == o %}aria-current="true"{% endif %}>{{ o }}</a>{% endfor %}
+  </nav>
+</div>
+
+<div class="origens">
+  {% for o in st.origens %}
+  <div class="o {{ 'bad' if o.status != 'SUCCESS' }}">
+    <b>{{ o.modulo }}</b>
+    <span class="st {{ o.status }}">{{ 'OK' if o.status == 'SUCCESS' else 'ERRO' }}</span>
+    <span class="mute"> {{ o.data_execucao|dt }} · {{ o.registros_processados }} reg.</span>
+  </div>
+  {% else %}<div class="o"><b>Nenhuma coleta executada</b><span class="mute">Use “Executar sincronização agora”.</span></div>{% endfor %}
+</div>
+
+<section class="panel">
+  {% if logs %}
+  <div class="scroll"><table>
+    <thead><tr><th>Data</th><th>Origem</th><th>Status</th><th class="num">Registros</th><th>Detalhes</th></tr></thead>
+    <tbody>
+    {% for l in logs %}
+      <tr style="vertical-align:top">
+        <td style="white-space:nowrap">{{ l.data_execucao|dt('%d/%m/%Y %H:%M:%S') }}</td>
+        <td><b>{{ l.modulo or '—' }}</b></td>
+        <td><span class="st {{ l.status }}">{{ 'OK' if l.status == 'SUCCESS' else 'ERRO' }}</span></td>
+        <td class="num">{{ l.registros_processados }}</td>
+        <td>{% if l.detalhes %}<details class="det"{{ ' open' if l.status != 'SUCCESS' and loop.index <= 3 }}><summary>{{ l.detalhes.splitlines()|length }} linha(s)</summary><pre>{{ l.detalhes }}</pre></details>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="empty"><b>Sem execuções registradas.</b></div>{% endif %}
+</section>
+{% endblock %}

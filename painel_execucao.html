@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel SDR — Ativa.ai</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --surface2: #1a1a1a;
+      --border: #222222;
+      --orange: #ff6b00;
+      --green: #00e676;
+      --green-dim: rgba(0,230,118,0.12);
+      --red: #ff3d57;
+      --red-dim: rgba(255,61,87,0.12);
+      --text: #e8e8e8;
+      --text-dim: #666;
+      --text-mid: #999;
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'Syne', sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      min-height: 100vh;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      background: rgba(10,10,10,0.95);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+    }
+    .logo { font-family: var(--sans); font-weight: 800; font-size: 18px; letter-spacing: -0.5px; }
+    .logo span { color: var(--orange); }
+    #clock { color: var(--orange); font-size: 12px; font-weight: 500; }
+
+    main { max-width: 1280px; margin: 0 auto; padding: 32px 24px 64px; }
+
+    .section-title {
+      font-family: var(--sans);
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 580px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--orange);
+      opacity: 0; transition: opacity 0.2s;
+    }
+    .card:hover { border-color: #333; }
+    .card:hover::before { opacity: 1; }
+
+    .card-label { font-size: 10px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); }
+    .card-title { font-family: var(--sans); font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.3; }
+
+    .btn {
+      background: var(--orange); color: #000;
+      border: none; padding: 11px 20px; border-radius: 8px;
+      font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: background 0.15s, transform 0.1s;
+      width: 100%;
+    }
+    .btn:hover:not(:disabled) { background: #ff8533; transform: translateY(-1px); }
+    .btn:active:not(:disabled) { transform: translateY(0); }
+    .btn:disabled { background: #2a2a2a; color: var(--text-dim); cursor: not-allowed; transform: none; }
+    .btn-sm { width: auto; padding: 7px 14px; font-size: 11px; border-radius: 6px; }
+    .btn-ghost {
+      background: transparent; color: var(--text-mid);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover:not(:disabled) { background: var(--surface2); color: var(--text); transform: none; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 13px; height: 13px;
+      border: 2px solid rgba(0,0,0,0.3); border-top-color: #000;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    .btn-ghost .spinner { border-color: rgba(255,255,255,0.2); border-top-color: var(--text); }
+
+    .msg {
+      font-size: 11px; padding: 8px 10px; border-radius: 6px;
+      line-height: 1.4; opacity: 0; transition: opacity 0.3s;
+    }
+    .msg.show { opacity: 1; }
+    .msg.ok  { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,230,118,0.2); }
+    .msg.err { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(255,61,87,0.2); }
+
+    .card-full { grid-column: 1 / -1; }
+    .card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .card-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+    .periodo { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+    .periodo strong { color: var(--orange); }
+
+    .table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th {
+      background: var(--surface2); padding: 10px 14px;
+      text-align: left; font-size: 10px; font-weight: 600;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--text-dim); border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    td { padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text); }
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: rgba(255,255,255,0.02); }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--orange); font-weight: 600; }
+    td.zero { color: var(--text-dim); }
+
+    .log-wrap { margin-top: 16px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .log-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; background: var(--surface);
+      border-bottom: 1px solid var(--border); cursor: pointer; user-select: none;
+    }
+    .log-header-left { display: flex; align-items: center; gap: 10px; }
+    .log-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--text-dim); transition: background 0.2s;
+    }
+    .log-dot.active { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
+    @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
+    .log-dot.active { animation: pulse 1.5s ease-in-out infinite; }
+
+    #log-body {
+      background: #0d0d0d; padding: 16px;
+      max-height: 220px; overflow-y: auto;
+      font-size: 11px; line-height: 1.7; display: none;
+    }
+    #log-body.open { display: block; }
+    .log-line { color: var(--text-dim); }
+    .log-line.ok  { color: var(--green); }
+    .log-line.err { color: var(--red); }
+    .log-line .ts { color: #444; margin-right: 8px; }
+
+    .badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 18px; height: 18px; padding: 0 5px;
+      border-radius: 9px; background: var(--surface2);
+      color: var(--text-dim); font-size: 10px; font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Ativa<span>.</span>ai — SDR Painel</div>
+  <div><span id="clock">--:--:--</span></div>
+</header>
+
+<main>
+  <div class="section-title">Execução de Relatórios</div>
+
+  <div class="grid">
+
+    <div class="card">
+      <div>
+        <div class="card-label">Streak CRM</div>
+        <div class="card-title">Follows Pendentes</div>
+      </div>
+      <button class="btn" onclick="executar('follows', this)">▶ Executar</button>
+      <div class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div>
+        <div class="card-label">Gmail + Sheets</div>
+        <div class="card-title">Emails Enviados</div>
+      </div>
+      <button class="btn" onclick="executar('emails', this)">▶ Executar</button>
+      <div class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div>
+        <div class="card-label">Gmail + Sheets</div>
+        <div class="card-title">Emails Enviados Ontem</div>
+      </div>
+      <button class="btn" onclick="executar('emailsOntem', this)">▶ Executar</button>
+      <div class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div>
+        <div class="card-label">Gmail + Sheets</div>
+        <div class="card-title">Enviados -3 dias</div>
+      </div>
+      <button class="btn" onclick="executar('emailsMenos3', this)">▶ Executar</button>
+      <div class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div>
+        <div class="card-label">Google Calendar</div>
+        <div class="card-title">Reuniões de Amanhã</div>
+      </div>
+      <button class="btn" onclick="executar('reunioesAmanha', this)">▶ Executar</button>
+      <div class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div>
+        <div class="card-label">Google Calendar</div>
+        <div class="card-title">Reuniões Semanais</div>
+      </div>
+      <button class="btn" onclick="executar('reunioesSemanais', this, { refreshWeekly: true })">▶ Executar</button>
+      <div class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div>
+        <div class="card-label">Google Calendar</div>
+        <div class="card-title">Reuniões Segunda-Feira</div>
+      </div>
+      <button class="btn" onclick="executar('reunioesSegunda', this)">▶ Executar</button>
+      <div class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div>
+        <div class="card-label">Google Calendar</div>
+        <div class="card-title">Reuniões De Hoje</div>
+      </div>
+      <button class="btn" onclick="executar('reunioesHoje', this)">▶ Executar</button>
+      <div class="msg"></div>
+    </div>
+
+    <!-- Resumo Semanal -->
+    <div class="card card-full">
+      <div class="card-header">
+        <div>
+          <div class="card-label">Relatório Consolidado</div>
+          <div class="card-title">Resumo Semanal</div>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-sm btn-ghost" onclick="carregarResumoSemanal()">⟳ Atualizar</button>
+          <button class="btn btn-sm btn-ghost" onclick="baixarResumoSemanal()">↓ Baixar</button>
+        </div>
+      </div>
+
+      <div id="periodo-semanal" class="periodo">
+        PERÍODO: — &nbsp;|&nbsp;
+        <span>Execute "Reuniões Semanais" para gerar/atualizar.</span>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>SDR</th>
+              <th style="text-align:right">Propostas</th>
+              <th style="text-align:right">Reuniões</th>
+              <th style="text-align:right">Total</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-semanal">
+            <tr>
+              <td colspan="4" style="color:var(--text-dim);font-size:11px;">
+                Nenhum dado carregado ainda.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="msg-semanal" class="msg"></div>
+    </div>
+
+  </div><!-- /grid -->
+
+  <!-- LOG -->
+  <div class="log-wrap">
+    <div class="log-header" onclick="toggleLog()">
+      <div class="log-header-left">
+        <div class="log-dot" id="log-dot"></div>
+        <span style="font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim)">
+          Log de Execução
+        </span>
+        <span class="badge" id="log-count">0</span>
+      </div>
+      <span style="font-size:10px;color:var(--text-dim);" id="log-toggle-label">▼ mostrar</span>
+    </div>
+    <div id="log-body"></div>
+  </div>
+
+</main>
+
+<script>
+  // ─── LOG ───────────────────────────────────────────────────────────
+  let logCount = 0;
+  function addLog(msg, type = '') {
+    const body = document.getElementById('log-body');
+    const ts = new Date().toLocaleTimeString('pt-BR');
+    const line = document.createElement('div');
+    line.className = `log-line ${type}`;
+    line.innerHTML = `<span class="ts">${ts}</span>${escapeHtml(msg)}`;
+    body.appendChild(line);
+    body.scrollTop = body.scrollHeight;
+    logCount++;
+    document.getElementById('log-count').textContent = logCount;
+    const dot = document.getElementById('log-dot');
+    dot.classList.add('active');
+    setTimeout(() => dot.classList.remove('active'), 1500);
+  }
+
+  function toggleLog() {
+    const body = document.getElementById('log-body');
+    const label = document.getElementById('log-toggle-label');
+    const open = body.classList.toggle('open');
+    label.textContent = open ? '▲ esconder' : '▼ mostrar';
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replaceAll('&','&amp;').replaceAll('<','&lt;')
+      .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+  }
+
+  // ─── EXECUTAR ──────────────────────────────────────────────────────
+  async function executar(tipo, botao, opts = {}) {
+    const msgDiv = botao.parentElement.querySelector('.msg');
+    msgDiv.className = 'msg';
+    msgDiv.textContent = '';
+    botao.disabled = true;
+    const orig = botao.textContent;
+    botao.innerHTML = '<div class="spinner"></div>Executando…';
+
+    addLog(`Iniciando: ${tipo}…`);
+
+    try {
+      const res = await fetch(`/executar/${tipo}`, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Erro HTTP ${res.status}`);
+      }
+
+      addLog(`${tipo}: concluído com sucesso`, 'ok');
+      msgDiv.textContent = '✓ Executado com sucesso!';
+      msgDiv.classList.add('ok', 'show');
+
+      if (opts.refreshWeekly) {
+        setTimeout(() => carregarResumoSemanal(), 800);
+      }
+
+    } catch (e) {
+      addLog(`ERRO em ${tipo}: ${e.message}`, 'err');
+      msgDiv.textContent = '✗ Erro: ' + e.message;
+      msgDiv.classList.add('err', 'show');
+      const body = document.getElementById('log-body');
+      if (!body.classList.contains('open')) toggleLog();
+    } finally {
+      botao.disabled = false;
+      botao.textContent = orig;
+      setTimeout(() => {
+        msgDiv.classList.remove('show');
+        setTimeout(() => { msgDiv.className = 'msg'; msgDiv.textContent = ''; }, 300);
+      }, 5000);
+    }
+  }
+
+  // ─── RESUMO SEMANAL ────────────────────────────────────────────────
+  async function carregarResumoSemanal() {
+    const periodo = document.getElementById('periodo-semanal');
+    const tbody   = document.getElementById('tbody-semanal');
+    const msg     = document.getElementById('msg-semanal');
+
+    try {
+      const res = await fetch('/api/relatorio-semanal');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Relatório não disponível.');
+      }
+
+      const data = await res.json();
+
+      periodo.innerHTML = `PERÍODO: <strong>${data.periodo.inicio}</strong> até <strong>${data.periodo.fim}</strong>
+        &nbsp;|&nbsp; Gerado em: ${new Date(data.geradoEm).toLocaleString('pt-BR')}`;
+
+      const rows = Array.isArray(data.dados) ? data.dados : [];
+      if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="4" style="color:var(--text-dim);">Sem dados para o período.</td></tr>`;
+        return;
+      }
+
+      let totalProp = 0, totalReu = 0;
+      const html = rows.map(r => {
+        totalProp += r.propostas;
+        totalReu  += r.reunioes;
+        const tot = r.propostas + r.reunioes;
+        return `<tr>
+          <td>${escapeHtml(r.sdr)}</td>
+          <td class="num ${r.propostas === 0 ? 'zero' : ''}">${r.propostas}</td>
+          <td class="num ${r.reunioes  === 0 ? 'zero' : ''}">${r.reunioes}</td>
+          <td class="num">${tot}</td>
+        </tr>`;
+      });
+
+      html.push(`<tr style="border-top:1px solid var(--border);font-weight:600;">
+        <td style="color:var(--text-dim);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Total</td>
+        <td class="num">${totalProp}</td>
+        <td class="num">${totalReu}</td>
+        <td class="num">${totalProp + totalReu}</td>
+      </tr>`);
+
+      tbody.innerHTML = html.join('');
+      msg.className = 'msg';
+
+      if (data.falhas?.length) {
+        msg.textContent = `⚠ ${data.falhas.length} conta(s) com erro. Veja o log.`;
+        msg.className = 'msg err show';
+      }
+
+    } catch (e) {
+      periodo.innerHTML = `PERÍODO: — &nbsp;|&nbsp; <span>${escapeHtml(e.message)}</span>`;
+      tbody.innerHTML = `<tr><td colspan="4" style="color:var(--text-dim);font-size:11px;">${escapeHtml(e.message)}</td></tr>`;
+    }
+  }
+
+  function baixarResumoSemanal() {
+    window.location.href = '/api/relatorio-semanal/download';
+  }
+
+  // ─── CLOCK ─────────────────────────────────────────────────────────
+  function updateClock() {
+    document.getElementById('clock').textContent = new Date().toLocaleTimeString('pt-BR');
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // Carrega resumo ao abrir (se já tiver sido gerado nesta sessão)
+  carregarResumoSemanal();
+</script>
+</body>
+</html>

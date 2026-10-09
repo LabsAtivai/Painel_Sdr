@@ -1,0 +1,22 @@
+services:
+  sdr-painel:
+    build: .
+    container_name: sdr-painel
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      DATA_DIR: /data
+      TZ: America/Sao_Paulo
+      SALESOPS_CLIENT_ID: ${SALESOPS_CLIENT_ID:-}
+      SALESOPS_CLIENT_SECRET: ${SALESOPS_CLIENT_SECRET:-}
+      SALESOPS_REFRESH_TOKEN: ${SALESOPS_REFRESH_TOKEN:-}
+      SYNC_SINCE_DAYS: ${SYNC_SINCE_DAYS:-7}
+      SYNC_INTERVAL_MIN: ${SYNC_INTERVAL_MIN:-0}
+      PANEL_USER: ${PANEL_USER:-}
+      PANEL_PASSWORD: ${PANEL_PASSWORD:-}
+    volumes:
+      - sdr_data:/data
+
+volumes:
+  sdr_data:

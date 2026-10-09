@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head">
+  <h1>Agenda de reuniões</h1>
+  <nav class="seg" aria-label="Período">
+    {% for key, label in [('hoje','Hoje'),('amanha','Amanhã'),('segunda','Segunda'),('semana','Semana')] %}
+    <a href="/agenda?filtro={{ key }}" {% if filtro == key %}aria-current="true"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+</div>
+
+<div class="split" style="grid-template-columns: minmax(0,1.6fr) minmax(0,1fr)">
+  <section aria-label="Eventos">
+    <p class="mute" style="margin:0 0 12px">
+      {{ ini.strftime('%d/%m/%Y') }}{{ ' a ' ~ fim.strftime('%d/%m/%Y') if fim != ini }} · {{ total }} evento{{ '' if total == 1 else 's' }}
+    </p>
+    {% for dia, itens in dias.items() %}
+    <div class="day">
+      <h3><b>{{ dia|weekday }}</b>, {{ dia.strftime('%d/%m') }}</h3>
+      <div class="panel scroll"><table>
+        <tbody>
+        {% for r, sdr_nome, conf in itens %}
+          <tr>
+            <td class="time">{{ r.data_inicio.strftime('%H:%M') }}</td>
+            <td>{% set prop = 'proposta' in (r.titulo_reuniao or '')|lower %}<span class="tag {{ 'proposta' if prop else 'reuniao' }}">{{ 'Proposta' if prop else 'Reunião' }}</span></td>
+            <td class="client" title="{{ r.titulo_reuniao }}">{{ r.titulo_reuniao_reuniao }}</td>
+            <td>{{ sdr_nome or '—' }}</td>
+            <td class="mute">{{ r.email_convidado or '' }}</td>
+            <td class="num">{% if conf is none %}<span class="mute" title="Sem e-mails do SalesOps coletados para esta data">—</span>
+              {% elif conf %}<span class="tag reuniao" title="E-mail de confirmação recebido no SalesOps">Confirmada</span>
+              {% else %}<span class="tag" style="--c:var(--late)" title="Nenhum e-mail de confirmação encontrado no SalesOps">Sem confirmação</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+    {% else %}
+    <div class="panel"><div class="empty"><b>Nenhuma reunião neste período.</b>Só eventos com “reunião entre” ou “proposta entre” no título entram aqui.</div></div>
+    {% endfor %}
+  </section>
+
+  <section class="panel" aria-labelledby="h-sem" style="align-self:start">
+    <header><h2 id="h-sem">Semana {{ sem_ini.strftime('%d/%m') }} a {{ sem_fim.strftime('%d/%m') }}</h2><span>por SDR</span></header>
+    {% if metricas %}
+    <table>
+      <thead><tr><th>SDR</th><th class="num">Reuniões</th><th class="num">Propostas</th><th class="num">Confirmadas</th><th class="num">Sem confirm.</th></tr></thead>
+      <tbody>
+      {% for nome, m in metricas %}<tr><td class="client">{{ nome }}</td><td class="num">{{ m.REUNIAO }}</td><td class="num">{{ m.PROPOSTA }}</td><td class="num">{{ m.SIM }}</td><td class="num" style="{{ 'color:var(--late);font-weight:700' if m.NAO }}">{{ m.NAO }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="empty"><b>Sem métricas ainda.</b>Aparecem após a sincronização da agenda.</div>{% endif %}
+  </section>
+</div>
+{% endblock %}

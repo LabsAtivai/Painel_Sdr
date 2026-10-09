@@ -1,0 +1,12 @@
+node_modules
+__pycache__/
+data/*.db*
+data/seed/
+seed/
+*.xlsx
+service-account-credentials.json
+# scripts Node legados com chaves embutidas (Google service account / Streak): nunca versionar
+app.js
+follows.mjs
+sdrs.mjs
+userprofile.txt

@@ -1,0 +1,14 @@
+node_modules
+data
+*.js
+*.cjs
+*.mjs
+*.json
+*.lock
+*.html
+*.txt
+!requirements.txt
+.git
+__pycache__
+seed
+*.xlsx

@@ -1,0 +1,42 @@
+{
+  "name": "relatorio-sdr",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "app.js",
+  "license": "MIT",
+  "description": "relatóriosdrs",
+  "repository": "https://github.com/LabsAtivai/negativacaoSendgrid",
+  "author": "labs <labs.ativaai@gmail.com>",
+
+  "scripts": {
+    "start": "node app.js",
+    "follows": "node follows.mjs",
+    "emails": "node enviadossdrs.cjs",
+    "reunioesAmanha": "node reunioesAmanha.cjs",
+    "reunioesSemanais": "node reunioesSemanais.cjs",
+    "reunioesSegunda": "node reunioesSegunda.cjs",
+    "reunioesHoje": "node reunioesHoje.cjs",
+    "sdrs": "node sdrs.mjs"
+  },
+
+  "dependencies": {
+    "@googleapis/sheets": "^5.0.5",
+    "axios": "^1.5.1",
+    "express": "^4.18.2",
+    "fetch": "^1.1.0",
+    "googleapis": "^130.0.0",
+    "node-fetch": "^3.3.2",
+    "p-limit": "^5.0.0",
+    "socket.io": "^4.7.4",
+    "v4": "^0.0.1"
+  },
+
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  },
+
+  "engines": {
+    "node": "20.x",
+    "yarn": "1.x"
+  }
+}

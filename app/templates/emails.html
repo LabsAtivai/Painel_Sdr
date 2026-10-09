@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head">
+  <h1>Disparos &amp; métricas de e-mail</h1>
+  <p class="mute">Gmail, pasta Enviados · últimos 14 dias</p>
+</div>
+
+<dl class="figures">
+  <div class="fig"><dt>Enviados hoje</dt><dd>{{ tot_hoje }}</dd></div>
+  <div class="fig"><dt>Últimos 7 dias</dt><dd>{{ tot_sete }}</dd></div>
+  <div class="fig"><dt>Média por SDR / dia (7d)</dt><dd>{{ (tot_sete / 7 / (linhas|length or 1))|round|int }}</dd></div>
+</dl>
+
+<section class="panel">
+  {% if linhas %}
+  <div class="scroll"><table>
+    <thead><tr><th>SDR</th><th class="num">Hoje</th><th class="num">Ontem</th><th class="num">7 dias</th><th class="num">14 dias</th><th>{{ dias[0].strftime('%d/%m') }} → hoje</th></tr></thead>
+    <tbody>
+    {% for l in linhas %}
+      <tr>
+        <td class="client">{{ l.sdr.nome }}{% if not l.tem %} <span class="mute" style="font-weight:500">· sem coleta</span>{% endif %}</td>
+        <td class="num">{{ l.hoje if l.hoje is not none else '—' }}</td>
+        <td class="num">{{ l.ontem if l.ontem is not none else '—' }}</td>
+        <td class="num"><b>{{ l.sete }}</b></td>
+        <td class="num">{{ l.catorze }}</td>
+        <td><div class="spark" role="img" aria-label="Série diária de 14 dias">
+          {% for v in l.serie %}<i class="{{ 'none' if v is none }}" style="height: {{ ((v or 0) * 100 // maior) if v else 8 }}%" title="{{ dias[loop.index0].strftime('%d/%m') }}: {{ v if v is not none else 'sem coleta' }}"></i>{% endfor %}
+        </div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="empty"><b>Nenhum SDR ativo.</b>Cadastre SDRs com credenciais do Gmail na aba SDRs.</div>{% endif %}
+</section>
+
+<section class="panel" style="margin-top:24px">
+  <header><h2>Confirmações recebidas (SalesOps)</h2><span>últimos 30 dias</span></header>
+  {% if conf %}
+  <table>
+    <thead><tr><th>Remetente</th><th class="num">Confirmações</th><th class="num">Última</th></tr></thead>
+    <tbody>{% for nome, q, ult in conf %}<tr><td class="client">{{ nome }}</td><td class="num"><b>{{ q }}</b></td><td class="num">{{ ult|dt('%d/%m/%Y') }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<div class="empty"><b>Nenhuma confirmação registrada.</b>Aparecem após a sincronização da caixa salesops.ativa@gmail.com.</div>{% endif %}
+</section>
+{% endblock %}
