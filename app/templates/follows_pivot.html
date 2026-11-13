@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% import "_visoes.html" as v %}
+{% block content %}
+<div class="head">
+  <h1>{{ {'follows':'Follows vencidos','sem_data':'Follows sem data','mais15':'Follows +15 dias','avancos':'Avanços, encaminhamentos e follows futuros'}[visao] }}</h1>
+  {{ v.nav(visao) }}
+</div>
+
+<p class="mute" style="margin:0 0 12px;max-width:80ch">
+  {% if visao == 'follows' %}Etapas ativas do Streak com follow-up já vencido. Soma de dias de atraso e de dias desde o último e-mail, por SDR e fase.
+  {% elif visao == 'sem_data' %}Etapas ativas sem data de follow-up preenchida no Streak.
+  {% elif visao == 'mais15' %}Etapas ativas com mais de {{ limite }} dias desde o último e-mail.
+  {% else %}Leads que avançaram, por SDR e fase (aba Avanços do Excel).{% endif %}
+  {% if visao != 'avancos' %}Ficam de fora Nutrição, Sem interesse, Perdido, Cliente Ganho e Repasse.{% endif %}
+</p>
+
+<form method="get" class="toolbar">
+  <input type="hidden" name="visao" value="{{ visao }}">
+  <label class="f">SDR
+    <select name="sdr_id"><option value="">Todos</option>
+      {% for s in sdrs %}<option value="{{ s.id }}" {{ 'selected' if f.sdr_id == s.id }}>{{ s.nome }}{{ '' if s.ativo else ' (inativo)' }}</option>{% endfor %}
+    </select></label>
+  {% if visao == 'avancos' %}
+  <label class="f">Período
+    <select name="dias">{% for d, l in [(0,'Todo o histórico'),(30,'30 dias'),(90,'90 dias'),(365,'1 ano')] %}<option value="{{ d }}" {{ 'selected' if f.dias == d }}>{{ l }}</option>{% endfor %}</select></label>
+  {% endif %}
+  <label class="f">{{ 'Empresa ou contato' if visao == 'avancos' else 'Cliente' }}<input type="search" name="q" value="{{ f.q }}" placeholder="Buscar"></label>
+  <button class="btn">Filtrar</button>
+</form>
+
+{% if visao == 'avancos' %}
+<dl class="figures"><div class="fig"><dt>Total geral</dt><dd>{{ total_av }}</dd></div>
+  {% for nome, g in grupos[:5] %}<div class="fig"><dt>{{ nome }}</dt><dd>{{ g.n }}</dd></div>{% endfor %}</dl>
+{% else %}
+<dl class="figures">
+  <div class="fig"><dt>Total geral</dt><dd>{{ total.n }}</dd></div>
+  <div class="fig late"><dt>Soma dias de atraso</dt><dd>{{ total.atraso }}</dd></div>
+  <div class="fig"><dt>Soma dias desde último e-mail</dt><dd>{{ total.ult }}</dd></div>
+</dl>
+{% endif %}
+
+<section class="panel" aria-label="Tabela dinâmica">
+  {% for nome, g in grupos %}
+  <details class="sdr" {{ 'open' if grupos|length == 1 }}>
+    <summary style="grid-template-columns:1fr 130px 130px 24px">
+      <b>{{ nome }}</b>
+      {% if visao == 'avancos' %}<span class="num">{{ g.n }} avanços</span><span></span>
+      {% else %}<span class="num">{{ g.n }} clientes</span><span class="num mute">atraso {{ g.atraso }} · últ. e-mail {{ g.ult }}</span>{% endif %}
+      <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+    </summary>
+    <div style="padding:6px 14px 14px">
+    {% for fase, fg in g.fases.items() %}
+      <h3 style="margin:12px 0 4px;font-size:13px"><span class="tag {{ fase|fase_class }}">{{ fase }}</span>
+        <span class="mute" style="font-weight:500"> {{ fg.n }}{% if visao != 'avancos' %} · atraso {{ fg.atraso }} · últ. e-mail {{ fg.ult }}{% endif %}</span></h3>
+      <div class="scroll"><table>
+        {% if visao == 'avancos' %}
+        <thead><tr><th>Empresa</th><th>Contato</th><th>Cargo</th><th>Porte</th><th>Estado</th><th>Canal</th><th class="num">Data</th></tr></thead>
+        <tbody>{% for r in fg.rows %}<tr><td class="client">{{ r.empresa or '—' }}</td><td>{{ r.contato or '—' }}{% if r.email_contato %}<div class="mute" style="font-size:12.5px">{{ r.email_contato }}</div>{% endif %}</td><td>{{ r.cargo or '—' }}</td><td>{{ r.porte or '—' }}</td><td>{{ r.estado or '—' }}</td><td>{{ r.canal or '—' }}</td><td class="num">{{ r.data|dt('%d/%m/%Y') }}</td></tr>{% endfor %}</tbody>
+        {% else %}
+        <thead><tr><th>Cliente</th><th>Follow-up</th><th class="num">Dias de atraso</th><th class="num">Dias desde último e-mail</th></tr></thead>
+        <tbody>{% for r in fg.rows %}<tr><td class="client">{{ r.cliente }}</td><td>{{ r.follow_up|dt('%d/%m/%Y') }}</td>
+          <td class="num" style="{{ 'color:var(--late);font-weight:700' if r.dias_atraso > limite }}">{{ r.dias_atraso }}</td><td class="num">{{ r.dias_desde_ultimo_email }}</td></tr>{% endfor %}</tbody>
+        {% endif %}
+      </table></div>
+      {% if fg.n > fg.rows|length %}<p class="mute" style="margin:4px 0 0;font-size:12.5px">Mostrando {{ fg.rows|length }} de {{ fg.n }}; filtre por SDR ou cliente para ver o resto.</p>{% endif %}
+    {% endfor %}
+    </div>
+  </details>
+  {% else %}
+  <div class="empty"><b>Nada nesta visão.</b>{{ 'Importe a aba Avanços ou ajuste o período.' if visao == 'avancos' else 'Rode a sincronização do Streak ou ajuste os filtros.' }}</div>
+  {% endfor %}
+</section>
+{% endblock %}

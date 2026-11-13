@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Controle SDRs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+{% set st = sync_status() %}
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>Controle SDRs</div>
+    <nav class="tabs" aria-label="Seções">
+      {% for key, label, href in [('geral','Dashboard','/'),('follows','Follows','/follows'),('agenda','Agenda','/agenda'),('rotina','Rotina diária','/rotina'),('emails','Disparos','/emails'),('analytics','Analytics','/analytics'),('sdrs','SDRs','/sdrs'),('credenciais','Credenciais','/credenciais'),('logs','Logs','/logs')] %}
+      <a class="tab" href="{{ href }}" {% if page == key %}aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+    <div class="sync">
+      <div class="sync-info">
+        {% if st.rodando %}<b>Sincronizando…</b>
+        {% elif st.ultima %}Atualizado <b>{{ st.ultima|ago }}</b>{% if st.erros %} · <span class="sync-warn">falha em {{ st.erros|join(', ') }}</span>{% endif %}
+        {% else %}<b>Nunca sincronizado</b>{% endif %}
+        <div class="pills">
+          {% for o in st.origens %}<span class="pill {{ 'ok' if o.status == 'SUCCESS' else 'err' }}" title="{{ o.data_execucao|dt }}">{{ o.modulo }}</span>{% endfor %}
+        </div>
+      </div>
+      <form method="post" action="/sync" id="sync-form">
+        <input type="hidden" name="next" value="{{ request.url.path }}{{ '?' + request.url.query if request.url.query }}">
+        <button class="btn btn-primary {{ 'spin' if st.rodando }}" id="sync-btn" {{ 'disabled' if st.rodando }}>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-3M4 5v3.5h3.5"/><path d="M4 13a8 8 0 0 0 14.9 3M20 19v-3.5h-3.5"/></svg>
+          <span>{{ 'Sincronizando…' if st.rodando else 'Executar sincronização agora' }}</span>
+        </button>
+      </form>
+    </div>
+  </div>
+</header>
+<main>
+  {% if request.query_params.get('msg') %}<div class="flash" role="status">{{ request.query_params.get('msg') }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+<script>
+  // Enquanto uma sincronização roda, consulta o estado e recarrega ao terminar.
+  (function () {
+    var btn = document.getElementById('sync-btn');
+    document.getElementById('sync-form').addEventListener('submit', function () {
+      btn.disabled = true; btn.classList.add('spin'); btn.lastElementChild.textContent = 'Sincronizando…';
+    });
+    {% if st.rodando %}
+    var t = setInterval(function () {
+      fetch('/api/sync-status').then(function (r) { return r.json(); }).then(function (s) {
+        if (!s.rodando) { clearInterval(t); location.reload(); }
+      }).catch(function () {});
+    }, 3000);
+    {% endif %}
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% import "_visoes.html" as v %}
+{% block content %}
+<div class="head">
+  <h1>Avanços &amp; Follows</h1>
+  {{ v.nav('ranking') }}
+  <div class="legend">
+    <span><i style="background:var(--f-avanco)"></i>Avanço</span>
+    <span><i style="background:var(--f-encam)"></i>Encaminhamento</span>
+    <span><i style="background:#c28a12"></i>Follow Futuro</span>
+  </div>
+</div>
+
+<form method="get" class="toolbar">
+  <label class="f">SDR
+    <select name="sdr_id">
+      <option value="">Todos</option>
+      <option value="0" {{ 'selected' if f.sdr_id == 0 }}>(sem SDR)</option>
+      {% for s in sdrs %}<option value="{{ s.id }}" {{ 'selected' if f.sdr_id == s.id }}>{{ s.nome }}{{ '' if s.ativo else ' (desligado)' }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="f">Fase
+    <select name="fase">
+      <option value="">Todas</option>
+      {% for fa in fases_disp %}<option {{ 'selected' if f.fase == fa }}>{{ fa }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="f">Cliente<input type="search" name="q" value="{{ f.q }}" placeholder="Buscar cliente"></label>
+  <label class="check"><input type="checkbox" name="mais15" value="1" {{ 'checked' if f.mais15 }}> Só atraso +{{ limite }} dias</label>
+  <button class="btn">Filtrar</button>
+  {% if f.sdr_id is not none or f.fase or f.q or f.mais15 %}<a href="/follows" class="mute">Limpar filtros</a>{% endif %}
+</form>
+
+<dl class="figures" style="margin-top:0">
+  <div class="fig"><dt>Registros</dt><dd>{{ total }}</dd></div>
+  <div class="fig late"><dt>Atraso +{{ limite }} dias</dt><dd>{{ acima }}</dd></div>
+  <div class="fig"><dt>Em atraso</dt><dd>{{ em_atraso }}</dd></div>
+  {% for nome, cls in [('Avanço','avanco'),('Encaminhamento','encam'),('Follow Futuro','follow')] %}
+  {% set ns = namespace(n=0) %}{% for fa, n in por_fase.items() if (fa|fase_class) == cls %}{% set ns.n = ns.n + n %}{% endfor %}
+  <div class="fig"><dt>{{ nome }}</dt><dd>{{ ns.n }}</dd></div>
+  {% endfor %}
+</dl>
+
+<div class="split">
+  <section class="panel" aria-labelledby="h-atrasos">
+    <header><h2 id="h-atrasos">Maiores atrasos (destaque &gt; {{ limite }} dias)</h2><span>{{ linhas|length }}{{ ' de ' ~ total if total > linhas|length }} registros</span></header>
+    {% if linhas %}
+    <div class="scroll"><table>
+      <thead><tr><th>Cliente</th><th>SDR</th><th>Fase</th><th>Follow-up</th><th class="num">Últ. e-mail</th><th class="num">Atraso (dias)</th></tr></thead>
+      <tbody>
+      {% for r, sdr_nome in linhas %}
+        <tr {{ 'class=hot' if r.dias_atraso > limite }}>
+          <td class="client" title="{{ r.cliente }}">{{ r.cliente }}</td>
+          <td>{{ sdr_nome or '—' }}</td>
+          <td><span class="tag {{ r.fase|fase_class }}">{{ r.fase or 'Sem fase' }}</span></td>
+          <td>{{ r.follow_up|dt('%d/%m/%Y') }}</td>
+          <td class="num mute">{{ r.dias_desde_ultimo_email }}d</td>
+          <td>
+            <div class="delay {{ 'zero' if not r.dias_atraso }}">
+              <b>{{ r.dias_atraso or 0 }}</b>
+              <div class="bar" aria-hidden="true"><i style="width: {{ (r.dias_atraso or 0) * 100 // maior }}%"></i></div>
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <div class="empty"><b>Nenhum registro com esses filtros.</b>{% if not total %}Rode a sincronização ou importe o CSV inicial.{% else %}Ajuste ou limpe os filtros.{% endif %}</div>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="h-sdr">
+    <header><h2 id="h-sdr">Por SDR</h2><span>ordenado por atrasos</span></header>
+    {% if por_sdr %}
+    <div class="scroll"><table>
+      <thead><tr><th>SDR</th><th>Fases</th><th class="num">Total</th><th class="num">Atrasos</th></tr></thead>
+      <tbody>
+      {% for nome, tot, av, en, fo, atr, mx in por_sdr %}
+        <tr>
+          <td class="client">{{ nome }}</td>
+          <td><div class="stack" role="img" aria-label="{{ av }} avanço, {{ en }} encaminhamento, {{ fo }} follow futuro">
+            <i class="avanco" style="width:{{ av * 100 // tot }}%"></i><i class="encam" style="width:{{ en * 100 // tot }}%"></i><i class="follow" style="width:{{ fo * 100 // tot }}%"></i>
+          </div></td>
+          <td class="num">{{ tot }}</td>
+          <td class="num" style="{{ 'color:var(--late);font-weight:700' if atr }}">{{ atr }}{% if mx %} <span class="mute" style="font-weight:500">· até {{ mx }}d</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}<div class="empty"><b>Sem dados.</b></div>{% endif %}
+  </section>
+</div>
+{% endblock %}

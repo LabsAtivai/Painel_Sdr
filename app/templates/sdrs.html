@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head">
+  <h1>Gestão de SDRs</h1>
+  <p class="mute">De/Para de nomes e e-mails, desligamento e transferência de histórico · {{ sdrs|selectattr('ativo')|list|length }} ativos</p>
+</div>
+
+<details class="panel" style="margin-bottom:20px" {{ 'open' if not sdrs }}>
+  <summary class="btn-like" style="padding:11px 14px;cursor:pointer;font-weight:700">Admitir novo SDR</summary>
+  <form method="post" action="/sdrs" class="new" style="border-top:1px solid var(--line)">
+    <label class="f">Nome<input type="text" name="nome" required autocomplete="off"></label>
+    <label class="f">E-mail (conta Gmail do SDR)<input type="email" name="email" required autocomplete="off"></label>
+    <button class="btn btn-primary" style="justify-self:start">Admitir</button>
+  </form>
+</details>
+
+<section class="panel" aria-label="SDRs cadastrados">
+  {% for s in sdrs %}
+  <details class="sdr {{ '' if s.ativo else 'off' }}">
+    <summary>
+      <span><b>{{ s.nome }}</b></span>
+      <span class="mute" style="overflow:hidden;text-overflow:ellipsis">{{ s.email }}</span>
+      <span class="status-dot">{{ 'Ativo' if s.ativo else 'Desligado' }}</span>
+      <a class="keystate {{ 'ok' if s.streak_api_key else 'no' }}" href="/credenciais#sdr-{{ s.id }}">Credenciais {{ 'ok' if s.streak_api_key and s.refresh_token else 'incompletas' }}</a>
+      <span class="num">{{ counts.get(s.id, 0) }} reg.</span>
+      <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+    </summary>
+    <div class="sdr-body">
+      <form method="post" action="/sdrs/{{ s.id }}/editar">
+        <fieldset>
+          <legend>Cadastro</legend>
+          <div class="grid2">
+            <label class="f">Nome<input type="text" name="nome" value="{{ s.nome }}" required></label>
+            <label class="f">E-mail<input type="email" name="email" value="{{ s.email }}" required></label>
+          </div>
+        </fieldset>
+        <button class="btn btn-primary">Salvar alterações</button>
+      </form>
+
+      <div class="side-actions">
+        <form method="post" action="/sdrs/{{ s.id }}/reatribuir">
+          <h4>Transferir histórico</h4>
+          <p class="mute" style="margin:0">Move os {{ counts.get(s.id, 0) }} registros de {{ s.nome }} para outro SDR.</p>
+          <select name="destino_id" required>
+            {% for o in sdrs if o.id != s.id %}<option value="{{ o.id }}">{{ o.nome }}{{ '' if o.ativo else ' (desligado)' }}</option>{% else %}<option value="" disabled selected>Sem outro SDR</option>{% endfor %}
+          </select>
+          <button class="btn" {{ 'disabled' if sdrs|length < 2 or not counts.get(s.id) }}
+                  onclick="return confirm('Mover {{ counts.get(s.id, 0) }} registros de {{ s.nome }}?')">Transferir</button>
+        </form>
+        <form method="post" action="/sdrs/{{ s.id }}/status">
+          <h4>{{ 'Desligar SDR' if s.ativo else 'Reativar SDR' }}</h4>
+          <p class="mute" style="margin:0">{{ 'Deixa de ser coletado. O histórico fica preservado.' if s.ativo else 'Volta a entrar nas coletas.' }}</p>
+          <button class="btn {{ 'btn-danger' if s.ativo }}" {% if s.ativo %}onclick="return confirm('Desligar {{ s.nome }}?')"{% endif %}>{{ 'Desligar' if s.ativo else 'Reativar' }}</button>
+        </form>
+        {% if not counts.get(s.id) %}
+        <form method="post" action="/sdrs/{{ s.id }}/excluir">
+          <h4>Excluir cadastro</h4>
+          <button class="btn btn-danger" onclick="return confirm('Excluir {{ s.nome }} definitivamente?')">Excluir</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </details>
+  {% else %}
+  <div class="empty"><b>Nenhum SDR cadastrado.</b>Admita o primeiro acima; sem SDR com chave do Streak não há o que coletar.</div>
+  {% endfor %}
+</section>
+{% endblock %}

@@ -1,0 +1,7 @@
+{% macro nav(atual) %}
+<nav class="seg" aria-label="Visão">
+  {% for k, l in [('ranking','Ranking'),('follows','Follows vencidos'),('sem_data','Sem data'),('mais15','+15 dias'),('avancos','Avanços')] %}
+  <a href="/follows?visao={{ k }}" {% if atual == k %}aria-current="true"{% endif %}>{{ l }}</a>
+  {% endfor %}
+</nav>
+{% endmacro %}

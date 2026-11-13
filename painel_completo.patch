@@ -1,0 +1,413 @@
+diff -ruN -x __pycache__ -x data orig/Painel_Sdr-master/app/main.py painel_extract/Painel_Sdr-master/app/main.py
+--- orig/Painel_Sdr-master/app/main.py	2026-10-09 10:14:19.000000000 -0300
++++ painel_extract/Painel_Sdr-master/app/main.py	2026-11-09 19:20:55.738930424 -0300
+@@ -8,7 +8,7 @@
+ from fastapi.staticfiles import StaticFiles
+ 
+ from app.database import SessionLocal, init_db
+-from app.routes import agenda, analytics, credenciais, dashboard, emails, logs, sdrs
++from app.routes import agenda, analytics, credenciais, dashboard, emails, logs, rotina, sdrs
+ from app.services import seed_xlsx, sync_service
+ 
+ _basic = HTTPBasic(auto_error=False)
+@@ -36,7 +36,7 @@
+ 
+ app = FastAPI(title="Controle SDRs", lifespan=lifespan, dependencies=[Depends(require_auth)])
+ app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
+-for r in (dashboard, agenda, emails, analytics, sdrs, credenciais, logs):
++for r in (dashboard, agenda, rotina, emails, analytics, sdrs, credenciais, logs):
+     app.include_router(r.router)
+ 
+ 
+diff -ruN -x __pycache__ -x data orig/Painel_Sdr-master/app/routes/rotina.py painel_extract/Painel_Sdr-master/app/routes/rotina.py
+--- orig/Painel_Sdr-master/app/routes/rotina.py	1969-12-31 21:00:00.000000000 -0300
++++ painel_extract/Painel_Sdr-master/app/routes/rotina.py	2026-11-09 19:22:49.252544979 -0300
+@@ -0,0 +1,94 @@
++"""Rotina diária: um botão atualiza Gmail + Agenda + Confirmações e a tela já mostra o relatório pronto."""
++import threading
++from datetime import date, datetime, timedelta
++
++from fastapi import APIRouter, Depends, Request
++from fastapi.responses import RedirectResponse
++from sqlalchemy import select
++from sqlalchemy.orm import Session
++
++from app.database import get_db
++from app.models.schema import SDR, Agenda, EmailEnviado, ExecutionLog
++from app.services import sync_service
++from app.services.confirmacao_match import Confirmacoes
++from app.templating import templates
++
++router = APIRouter()
++
++# só o que o relatório usa (o Streak, que é mais lento, fica de fora)
++MODULOS_ROTINA = ("GMAIL", "AGENDA", "CONFIRMACOES")
++
++
++def dia_seguinte(hoje: date) -> date:
++    """Próximo dia útil: de sexta/sábado/domingo o 'dia seguinte' é segunda."""
++    d = hoje + timedelta(days=1)
++    while d.weekday() >= 5:
++        d += timedelta(days=1)
++    return d
++
++
++def dia_enviados(hoje: date) -> date:
++    """Dia dos e-mails enviados no relatório: o dia; na segunda, 3 dias atrás (sexta)."""
++    return hoje - timedelta(days=3) if hoje.weekday() == 0 else hoje
++
++
++def rotulo(nome: str | None) -> str:
++    """Nome do SDR como na planilha: Julia@ativa.ai."""
++    nome = (nome or "—").strip()
++    return nome if "@" in nome or nome == "—" else f"{nome}@ativa.ai"
++
++
++def _estado_coleta(db: Session, hoje: date) -> list[dict]:
++    """Última execução de cada módulo da rotina + se está ok (sucesso e feita hoje)."""
++    out = []
++    for m in MODULOS_ROTINA:
++        log = db.scalar(select(ExecutionLog).where(ExecutionLog.modulo == m).order_by(ExecutionLog.id.desc()).limit(1))
++        ok = bool(log and log.status == "SUCCESS" and log.data_execucao.date() == hoje)
++        out.append({"modulo": m, "log": log, "ok": ok, "falhou": bool(log and log.status != "SUCCESS")})
++    return out
++
++
++@router.get("/rotina")
++def rotina(request: Request, dia: date | None = None, db: Session = Depends(get_db)):
++    hoje = date.today()
++    alvo = dia_seguinte(hoje)
++    ini, fim = datetime.combine(alvo, datetime.min.time()), datetime.combine(alvo + timedelta(days=1), datetime.min.time())
++
++    # e-mails enviados: um dia só (padrão: o dia; segunda -> sexta). A sincronização mantém hoje + 3 dias anteriores.
++    dias = [hoje - timedelta(days=i) for i in range(3, -1, -1)]
++    dia_env = dia if dia in dias else dia_enviados(hoje)
++    qtd = dict(db.execute(select(EmailEnviado.sdr_id, EmailEnviado.quantidade).where(EmailEnviado.data_registro == dia_env)).all())
++    enviados = [(rotulo(s.nome), qtd.get(s.id)) for s in db.scalars(select(SDR).where(SDR.ativo.is_(True)).order_by(SDR.nome))]
++    tot_enviados = sum(q or 0 for _, q in enviados)
++
++    # reuniões do dia seguinte, agrupadas por SDR (propostas primeiro, depois qualificação), com Sim/Não
++    eventos = db.execute(
++        select(Agenda, SDR.nome).join(SDR, SDR.id == Agenda.sdr_id, isouter=True)
++        .where(Agenda.data_inicio >= ini, Agenda.data_inicio < fim)).all()
++    conf = Confirmacoes(db, ini, fim)
++    grupos: dict[str, list] = {}
++    for a, nome in eventos:
++        titulo = a.titulo_reuniao or ""
++        eh_proposta = "proposta" in titulo.lower()
++        grupos.setdefault(rotulo(nome), []).append(
++            {"titulo": titulo, "proposta": eh_proposta, "conf": conf.status(titulo, a.email_convidado, a.data_inicio)})
++    for itens in grupos.values():
++        itens.sort(key=lambda i: (not i["proposta"], i["titulo"].lower()))
++    grupos = dict(sorted(grupos.items()))
++    totais = [(sdr, len(it), sum(i["proposta"] for i in it), sum(not i["proposta"] for i in it)) for sdr, it in grupos.items()]
++    tot_geral = (sum(t[1] for t in totais), sum(t[2] for t in totais), sum(t[3] for t in totais))
++
++    return templates.TemplateResponse(request, "rotina.html", {
++        "page": "rotina", "hoje": hoje, "alvo": alvo, "dias": dias, "dia_env": dia_env,
++        "enviados": enviados, "tot_enviados": tot_enviados, "grupos": grupos, "totais": totais, "tot_geral": tot_geral,
++        "sem_cobertura": any(i["conf"] is None for it in grupos.values() for i in it),
++        "coleta": _estado_coleta(db, hoje), "rodando": sync_service.is_running(),
++    })
++
++
++@router.post("/rotina/atualizar")
++def atualizar():
++    """Dispara a coleta em segundo plano; a página recarrega sozinha quando termina (script do base.html)."""
++    if not sync_service.is_running():
++        threading.Thread(target=sync_service.run_sync, kwargs={"modulos": MODULOS_ROTINA, "trigger": "rotina"}, daemon=True).start()
++    return RedirectResponse("/rotina", status_code=303)
+diff -ruN -x __pycache__ -x data orig/Painel_Sdr-master/app/services/confirmacao_match.py painel_extract/Painel_Sdr-master/app/services/confirmacao_match.py
+--- orig/Painel_Sdr-master/app/services/confirmacao_match.py	2026-10-09 10:14:19.000000000 -0300
++++ painel_extract/Painel_Sdr-master/app/services/confirmacao_match.py	2026-11-09 19:02:25.876691426 -0300
+@@ -16,6 +16,25 @@
+     return re.sub(r"\s+", " ", _RUIDO.sub(" ", norm(titulo))).strip()
+ 
+ 
++JANELA_DIAS = 45  # mesma janela usada em Confirmacoes.status()
++
++
++def termos_de_busca(titulo: str | None, convidado: str | None) -> list[str]:
++    """O que procurar no Gmail: título inteiro, nome da empresa/contato e e-mail do convidado."""
++    return [t for t in (titulo, nucleo(titulo), convidado) if t and len(t.strip()) >= 3]
++
++
++def buscar_no_gmail(g, titulo: str | None, convidado: str | None, quando: datetime) -> dict | None:
++    """Procura no Gmail do SalesOps o e-mail de confirmação da reunião. Devolve o e-mail ou None."""
++    return g.find_confirmation(termos_de_busca(titulo, convidado),
++                               quando - timedelta(days=JANELA_DIAS), quando + timedelta(days=2))
++
++
++def confirmou_no_gmail(g, titulo: str | None, convidado: str | None, quando: datetime) -> bool:
++    """True = "Sim" (verde), False = "Não" (vermelho)."""
++    return buscar_no_gmail(g, titulo, convidado, quando) is not None
++
++
+ class Confirmacoes:
+     def __init__(self, db: Session, ini: datetime, fim: datetime):
+         self.cobertura = db.scalar(select(func.min(ConfirmacaoEmail.data)))
+diff -ruN -x __pycache__ -x data orig/Painel_Sdr-master/app/services/gmail_service.py painel_extract/Painel_Sdr-master/app/services/gmail_service.py
+--- orig/Painel_Sdr-master/app/services/gmail_service.py	2026-10-09 10:14:19.000000000 -0300
++++ painel_extract/Painel_Sdr-master/app/services/gmail_service.py	2026-11-09 19:02:20.376691099 -0300
+@@ -9,6 +9,8 @@
+ GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
+ CAL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+ TOKEN_URL = "https://oauth2.googleapis.com/token"
++# o que caracteriza um e-mail de confirmação (usado na coleta em lote e na busca direcionada)
++CONFIRMACAO_Q = '("reuniao entre" OR "reunião entre" OR "proposta entre")'
+ 
+ 
+ @dataclass
+@@ -71,16 +73,30 @@
+                       singleEvents="true", orderBy="startTime", maxResults=500)
+         return d.get("items", [])
+ 
+-    def confirmation_messages(self, days: int) -> list[dict]:
+-        """E-mails recebidos com "reuniao entre"/"proposta entre": [{id, from, subject, text, date}]."""
+-        q = f'newer_than:{days}d ("reuniao entre" OR "reunião entre" OR "proposta entre")'
+-        out = []
+-        for mid in self._ids(q):
+-            m = self._get(f"{GMAIL}/messages/{mid}", format="full")
+-            hdr = {h["name"].lower(): h["value"] for h in m["payload"].get("headers", [])}
+-            out.append({"id": mid, "from": hdr.get("from", ""), "subject": hdr.get("subject", ""),
+-                        "text": _body_text(m["payload"])[:6000], "date": datetime.fromtimestamp(int(m["internalDate"]) / 1000)})
+-        return out
++    def _message(self, mid: str) -> dict:
++        """Lê UM e-mail completo: {id, from, subject, text, date}."""
++        m = self._get(f"{GMAIL}/messages/{mid}", format="full")
++        hdr = {h["name"].lower(): h["value"] for h in m["payload"].get("headers", [])}
++        return {"id": mid, "from": hdr.get("from", ""), "subject": hdr.get("subject", ""),
++                "text": _body_text(m["payload"])[:6000], "date": datetime.fromtimestamp(int(m["internalDate"]) / 1000)}
++
++    def confirmation_messages(self, days: int, skip_ids: set[str] | frozenset[str] = frozenset()) -> list[dict]:
++        """E-mails com "reuniao entre"/"proposta entre". Só baixa o corpo dos IDs que NÃO estão em skip_ids."""
++        ids = self._ids(f"newer_than:{days}d {CONFIRMACAO_Q}")
++        return [self._message(mid) for mid in ids if mid not in skip_ids]
++
++    def find_confirmation(self, termos: list[str], inicio: datetime, fim: datetime) -> dict | None:
++        """Busca direcionada: existe e-mail de confirmação que cite algum dos termos entre inicio e fim?
++
++        Custa 1 chamada leve (maxResults=1, só o id); só lê o e-mail se achar. Devolve o e-mail ou None.
++        """
++        termos = list(dict.fromkeys(t.replace('"', " ").strip() for t in termos if t and len(t.strip()) >= 3))
++        if not termos:
++            return None
++        ou = " OR ".join(f'"{t}"' for t in termos)
++        q = f"{CONFIRMACAO_Q} ({ou}) after:{inicio:%Y/%m/%d} before:{fim:%Y/%m/%d}"
++        achados = self._get(f"{GMAIL}/messages", q=q, maxResults=1, fields="messages/id").get("messages", [])
++        return self._message(achados[0]["id"]) if achados else None
+ 
+ 
+ def _body_text(payload: dict) -> str:
+diff -ruN -x __pycache__ -x data orig/Painel_Sdr-master/app/services/sync_service.py painel_extract/Painel_Sdr-master/app/services/sync_service.py
+--- orig/Painel_Sdr-master/app/services/sync_service.py	2026-10-09 10:14:19.000000000 -0300
++++ painel_extract/Painel_Sdr-master/app/services/sync_service.py	2026-11-09 19:02:35.644692007 -0300
+@@ -2,6 +2,7 @@
+ import threading
+ import time
+ from datetime import date, datetime, timedelta
++from email.utils import parseaddr
+ 
+ from sqlalchemy import delete, select
+ from sqlalchemy.orm import Session
+@@ -9,6 +10,7 @@
+ from app.database import SessionLocal
+ from app.models.schema import SDR, Agenda, Confirmacao, ConfirmacaoEmail, DadoRelatorio, EmailEnviado, ExecutionLog
+ from app.services import gmail_service, streak_service
++from app.services.confirmacao_match import Confirmacoes, buscar_no_gmail
+ from app.services.credenciais import cfg
+ from app.services.util import norm
+ 
+@@ -126,27 +128,47 @@
+     _with_google(db, r, run)
+ 
+ 
++def _linha_confirmacao(m: dict, by_email: dict) -> ConfirmacaoEmail:
++    """Converte o e-mail lido do Gmail na linha da tabela confirmacoes_emails."""
++    addr = parseaddr(m["from"])[1].lower()
++    s = by_email.get(addr)
++    return ConfirmacaoEmail(message_id=m["id"], sdr_id=s.id if s else None, remetente=addr[:150], assunto=m["subject"][:300],
++                            texto=norm(m["subject"] + " " + m["text"]) + " " + (m["text"] + m["subject"]).lower(), data=m["date"])
++
++
++def _conferir_pendentes(db: Session, g, by_email: dict) -> int:
++    """Para cada reunião da semana que ainda está "Não", pergunta direto ao Gmail. Salva o e-mail achado."""
++    hoje = datetime.combine(date.today(), datetime.min.time())
++    ini, fim = hoje - timedelta(days=hoje.weekday()), hoje + timedelta(days=8)
++    reunioes = db.scalars(select(Agenda).where(Agenda.data_inicio >= ini, Agenda.data_inicio < fim)).all()
++    conf = Confirmacoes(db, ini, fim)
++    achados = 0
++    for a in reunioes:
++        if conf.status(a.titulo_reuniao, a.email_convidado, a.data_inicio) is not False:  # None = sem cobertura; True = já confirmada
++            continue
++        m = buscar_no_gmail(g, a.titulo_reuniao, a.email_convidado, a.data_inicio)
++        if m and not db.scalar(select(ConfirmacaoEmail.id).where(ConfirmacaoEmail.message_id == m["id"])):
++            db.add(_linha_confirmacao(m, by_email))
++            achados += 1
++    db.flush()
++    return achados
++
++
+ def sync_confirmacoes(db: Session, r: Result):
+     creds = gmail_service.salesops_creds()
+     if not creds:
+         r.bad("SALESOPS_CLIENT_ID / SECRET / REFRESH_TOKEN não configurados")
+         return
+-    from email.utils import parseaddr
+-
+     days = int(cfg("SYNC_SINCE_DAYS", "7") or 7)
+-    with gmail_service.Google(creds) as g:
+-        msgs = g.confirmation_messages(days)
+     by_email = {s.email.lower(): s for s in db.scalars(select(SDR))}
+-    novos = 0
+-    for m in msgs:
+-        if db.scalar(select(ConfirmacaoEmail.id).where(ConfirmacaoEmail.message_id == m["id"])):
+-            continue
+-        addr = parseaddr(m["from"])[1].lower()
+-        s = by_email.get(addr)
+-        db.add(ConfirmacaoEmail(message_id=m["id"], sdr_id=s.id if s else None, remetente=addr[:150], assunto=m["subject"][:300],
+-                                texto=norm(m["subject"] + " " + m["text"]) + " " + (m["text"] + m["subject"]).lower(), data=m["date"]))
+-        novos += 1
+-    db.flush()
++    conhecidos = set(db.scalars(select(ConfirmacaoEmail.message_id)))
++    with gmail_service.Google(creds) as g:
++        msgs = g.confirmation_messages(days, skip_ids=conhecidos)  # só baixa o que ainda não está no banco
++        novos = len(msgs)
++        db.add_all(_linha_confirmacao(m, by_email) for m in msgs)
++        db.flush()
++        achados = _conferir_pendentes(db, g, by_email)  # reuniões ainda "Não": busca direcionada no Gmail
++    novos += achados
+     # contagens por remetente/dia (tabela 'confirmacoes' do spec) recompostas a partir dos e-mails da janela
+     inicio = datetime.combine(date.today() - timedelta(days=days), datetime.min.time())
+     db.execute(delete(Confirmacao).where(Confirmacao.data_registro >= inicio))
+@@ -157,7 +179,7 @@
+     for (sid, rem, day), q in cont.items():
+         db.add(Confirmacao(sdr_id=sid, remetente=rem, quantidade=q, data_registro=datetime.combine(day, datetime.min.time())))
+     db.commit()
+-    r.good(f"{len(msgs)} e-mail(s) na janela de {days} dia(s), {novos} novo(s)", novos)
++    r.good(f"{novos} e-mail(s) novo(s) na janela de {days} dia(s) ({achados} achado(s) pela busca direcionada)", novos)
+ 
+ 
+ JOBS = {"STREAK": sync_streak, "GMAIL": sync_emails, "AGENDA": sync_agenda, "CONFIRMACOES": sync_confirmacoes}
+diff -ruN -x __pycache__ -x data orig/Painel_Sdr-master/app/templates/base.html painel_extract/Painel_Sdr-master/app/templates/base.html
+--- orig/Painel_Sdr-master/app/templates/base.html	2026-10-09 10:14:19.000000000 -0300
++++ painel_extract/Painel_Sdr-master/app/templates/base.html	2026-11-09 19:20:56.434930449 -0300
+@@ -15,7 +15,7 @@
+   <div class="top-in">
+     <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>Controle SDRs</div>
+     <nav class="tabs" aria-label="Seções">
+-      {% for key, label, href in [('geral','Dashboard','/'),('follows','Follows','/follows'),('agenda','Agenda','/agenda'),('emails','Disparos','/emails'),('analytics','Analytics','/analytics'),('sdrs','SDRs','/sdrs'),('credenciais','Credenciais','/credenciais'),('logs','Logs','/logs')] %}
++      {% for key, label, href in [('geral','Dashboard','/'),('follows','Follows','/follows'),('agenda','Agenda','/agenda'),('rotina','Rotina diária','/rotina'),('emails','Disparos','/emails'),('analytics','Analytics','/analytics'),('sdrs','SDRs','/sdrs'),('credenciais','Credenciais','/credenciais'),('logs','Logs','/logs')] %}
+       <a class="tab" href="{{ href }}" {% if page == key %}aria-current="page"{% endif %}>{{ label }}</a>
+       {% endfor %}
+     </nav>
+diff -ruN -x __pycache__ -x data orig/Painel_Sdr-master/app/templates/rotina.html painel_extract/Painel_Sdr-master/app/templates/rotina.html
+--- orig/Painel_Sdr-master/app/templates/rotina.html	1969-12-31 21:00:00.000000000 -0300
++++ painel_extract/Painel_Sdr-master/app/templates/rotina.html	2026-11-09 19:23:37.562778892 -0300
+@@ -0,0 +1,106 @@
++{% extends "base.html" %}
++{% block content %}
++<style>
++  .rel { display: grid; grid-template-columns: minmax(230px, .8fr) minmax(430px, 2fr) minmax(360px, 1fr); gap: 18px; align-items: start; background: #fff; padding: 14px; border: 1px solid var(--line); border-radius: var(--r); }
++  @media (max-width: 1100px) { .rel { grid-template-columns: 1fr; } }
++  .rel table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
++  .rel th, .rel td { padding: 5px 8px; border-bottom: 1px solid #d9dde1; text-align: left; }
++  .rel .titulo { background: #ff9900; color: #000; font-weight: 800; text-align: center; padding: 7px 8px; letter-spacing: .02em; }
++  .rel .titulo small { display: block; font-weight: 600; font-size: 11.5px; opacity: .8; }
++  .rel thead th { background: #bfbfbf; color: #000; font-weight: 600; }
++  .rel thead th.n { background: #000; color: #fff; }
++  .rel td.n, .rel th.n { text-align: right; font-variant-numeric: tabular-nums; }
++  .rel tr.sdr td { background: #eee; font-weight: 700; }
++  .rel tr.sub td { background: #bfbfbf; font-weight: 700; }
++  .rel tr.tot td { background: #bfbfbf; font-weight: 800; border-top: 2px solid #000; }
++  .rel td.sim, .rel td.nao, .rel td.nd { text-align: center; font-weight: 600; width: 92px; }
++  .rel td.sim { background: #3ddc5a; color: #000; }
++  .rel td.nao { background: #ff3b30; color: #fff; }
++  .rel td.nd { color: #888; }
++  .rel .tit { background: #eee; }
++  .rel thead th.box { background: #fff; color: #000; border: 1px solid #000; text-align: center; }
++</style>
++
++<div class="head">
++  <h1>Rotina diária</h1>
++  <form method="post" action="/rotina/atualizar">
++    <button class="btn btn-primary {{ 'spin' if rodando }}" {{ 'disabled' if rodando }}>
++      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-3M4 5v3.5h3.5"/><path d="M4 13a8 8 0 0 0 14.9 3M20 19v-3.5h-3.5"/></svg>
++      <span>{{ 'Atualizando…' if rodando else 'Atualizar tudo e gerar relatório' }}</span>
++    </button>
++  </form>
++</div>
++
++{# estado honesto da coleta: o relatório só é confiável se os 3 módulos rodaram hoje sem erro #}
++{% if coleta|rejectattr('ok')|list %}
++<div class="panel" style="margin-bottom:16px; border-color:#e6b8b3; background:var(--late-soft)">
++  <div style="padding:10px 14px">
++    <b>Os dados podem estar desatualizados.</b> Clique em “Atualizar tudo e gerar relatório”.
++    {% for c in coleta if not c.ok %}
++      <div class="mute">{{ c.modulo }}: {% if not c.log %}nunca executado{% elif c.falhou %}falhou em {{ c.log.data_execucao.strftime('%d/%m %H:%M') }} — veja a aba Logs{% else %}última coleta em {{ c.log.data_execucao.strftime('%d/%m %H:%M') }}{% endif %}</div>
++    {% endfor %}
++  </div>
++</div>
++{% else %}
++<p class="mute" style="margin:0 0 12px">Dados atualizados hoje às {{ (coleta|map(attribute='log.data_execucao')|max).strftime('%H:%M') }}.</p>
++{% endif %}
++{% if sem_cobertura %}<p class="mute" style="margin:0 0 12px">“—” na confirmação: ainda não há e-mails do SalesOps coletados para essa data.</p>{% endif %}
++
++<div class="head" style="margin-bottom:10px">
++  <p class="mute">E-mails enviados do dia:</p>
++  <nav class="seg" aria-label="Dia dos e-mails enviados">
++    {% for d in dias %}<a href="/rotina?dia={{ d.isoformat() }}" {% if d == dia_env %}aria-current="true"{% endif %}>{{ d|weekday }} {{ d.strftime('%d/%m') }}{{ ' · hoje' if d == hoje }}</a>{% endfor %}
++  </nav>
++</div>
++
++{# tudo dentro de .rel é o que vai no print do grupo comercial #}
++<div class="rel">
++  <section>
++    <div class="titulo">QUANTIDADE DE EMAILS ENVIADOS DIA<small>{{ dia_env|weekday }} {{ dia_env.strftime('%d/%m/%Y') }}</small></div>
++    <table>
++      <thead><tr><th>emails</th><th class="n">SUM de enviados</th></tr></thead>
++      <tbody>
++      {% for sdr, q in enviados %}<tr><td>{{ sdr }}</td><td class="n">{{ q if q is not none else '—' }}</td></tr>
++      {% else %}<tr><td colspan="2" class="mute">Nenhum SDR ativo.</td></tr>{% endfor %}
++        <tr class="tot"><td>Total geral</td><td class="n">{{ tot_enviados }}</td></tr>
++      </tbody>
++    </table>
++  </section>
++
++  <section>
++    <div class="titulo">REUNIÕES · CONFIRMAÇÕES<small>{{ alvo|weekday }} {{ alvo.strftime('%d/%m/%Y') }}</small></div>
++    <table>
++      <thead><tr><th>SDR</th><th>Título da Reunião</th><th class="n">COUNTA de SDR</th><th style="text-align:center">Confirmação</th></tr></thead>
++      <tbody>
++      {% for sdr, itens in grupos.items() %}
++        {% for i in itens %}
++        <tr>
++          <td class="{{ 'sdr' if loop.first }}" {% if loop.first %}style="background:#eee;font-weight:700"{% endif %}>{{ sdr if loop.first }}</td>
++          <td class="tit">{{ i.titulo }}</td>
++          <td class="n">1</td>
++          {% if i.conf is none %}<td class="nd">—</td>{% elif i.conf %}<td class="sim">Sim</td>{% else %}<td class="nao">Não</td>{% endif %}
++        </tr>
++        {% endfor %}
++        <tr class="sub"><td colspan="2">{{ sdr }} Total</td><td class="n">{{ itens|length }}</td><td></td></tr>
++      {% else %}
++        <tr><td colspan="4" class="mute" style="padding:16px">Nenhuma reunião ou proposta para {{ alvo.strftime('%d/%m') }}.</td></tr>
++      {% endfor %}
++        <tr class="tot"><td colspan="2">Total geral</td><td class="n">{{ tot_geral[0] }}</td><td></td></tr>
++      </tbody>
++    </table>
++  </section>
++
++  <section>
++    <div class="titulo">REUNIÕES TOTAL<small>{{ alvo|weekday }} {{ alvo.strftime('%d/%m/%Y') }}</small></div>
++    <table>
++      <thead><tr><th>SDR</th><th class="n">Reuniões</th><th class="box">PROPOSTAS</th><th class="box">Qualificação</th></tr></thead>
++      <tbody>
++      {% for sdr, tot, prop, qual in totais %}
++        <tr><td>{{ sdr }}</td><td class="n" style="background:#000;color:#fff">{{ tot }}</td><td class="n">{{ prop or '' }}</td><td class="n">{{ qual or '' }}</td></tr>
++      {% endfor %}
++        <tr class="tot"><td>Total geral</td><td class="n" style="background:#000;color:#fff">{{ tot_geral[0] }}</td><td class="n">{{ tot_geral[1] }}</td><td class="n">{{ tot_geral[2] }}</td></tr>
++      </tbody>
++    </table>
++  </section>
++</div>
++{% endblock %}

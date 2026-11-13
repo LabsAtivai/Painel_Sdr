@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head">
+  <h1>Dashboard geral</h1>
+  <nav class="seg" aria-label="Período dos e-mails">{% for k, l in periodos.items() %}<a href="/?periodo={{ k }}" {% if periodo == k %}aria-current="true"{% endif %}>{{ l }}</a>{% endfor %}</nav>
+</div>
+
+<dl class="figures">
+  <div class="fig late"><dt>Follows +{{ limite }} dias sem e-mail</dt><dd>{{ kpi.mais15 }}</dd></div>
+  <div class="fig"><dt>Registros no Streak</dt><dd>{{ kpi.follows }}</dd></div>
+  <div class="fig"><dt>Reuniões hoje</dt><dd>{{ kpi.reunioes_hoje }}</dd></div>
+  <div class="fig"><dt>Reuniões na semana</dt><dd>{{ kpi.reunioes_sem }}</dd></div>
+  <div class="fig"><dt>E-mails ({{ periodos[periodo]|lower }})</dt><dd>{{ kpi.emails_hoje }}</dd></div>
+  <div class="fig"><dt>Confirmações (7d)</dt><dd>{{ kpi.confirmacoes }}</dd></div>
+</dl>
+
+{% if kpi.sem_coleta %}<div class="flash" style="background:var(--warn-soft);border-color:#e2c987;color:#5c3d00">Sem coleta de e-mails hoje: {{ kpi.sem_coleta|join(', ') }}. Confira as credenciais na aba SDRs.</div>{% endif %}
+
+<div class="split">
+  <section class="panel" aria-labelledby="h-sdr">
+    <header><h2 id="h-sdr">Por SDR</h2><span>{{ linhas|length }} ativos · ordenado por follow +{{ limite }}</span></header>
+    {% if linhas %}
+    <div class="scroll"><table>
+      <thead><tr><th>SDR</th><th class="num">Follows</th><th class="num">+{{ limite }} dias</th><th class="num">Maior atraso</th><th class="num">Reuniões hoje</th><th class="num">Semana</th><th class="num">Reuniões mês</th><th class="num">E-mails ({{ periodos[periodo]|lower }})</th><th class="num">E-mails 7d</th></tr></thead>
+      <tbody>
+      {% for l in linhas %}
+        <tr>
+          <td class="client">{{ l.sdr.nome }}</td>
+          <td class="num">{{ l.follows }}</td>
+          <td class="num" style="{{ 'color:var(--late);font-weight:700' if l.mais15 }}">{{ l.mais15 }}</td>
+          <td class="num">{{ l.maior ~ 'd' if l.maior else '—' }}</td>
+          <td class="num">{{ l.reunioes_hoje }}</td>
+          <td class="num">{{ l.reunioes_sem }}</td>
+          <td class="num">{{ l.reunioes_mes }}</td>
+          <td class="num">{{ l.emails_hoje if l.emails_hoje is not none else '—' }}</td>
+          <td class="num">{{ l.emails_7 }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}<div class="empty"><b>Nenhum SDR ativo.</b>Cadastre na aba SDRs ou coloque o Controle SDrs.xlsx em /data/seed antes da primeira subida.</div>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="h-al">
+    <header><h2 id="h-al">Alertas +{{ limite }} dias</h2><a href="/follows?visao=mais15">ver todos</a></header>
+    {% if alertas %}
+    <table>
+      <tbody>
+      {% for r, nome in alertas %}
+        <tr><td class="client" title="{{ r.cliente }}">{{ r.cliente }}<div class="mute" style="font-weight:500;font-size:12.5px">{{ nome or '—' }} · {{ r.fase or 'Sem fase' }}</div></td>
+            <td class="num" style="color:var(--late);font-weight:700">{{ r.dias_desde_ultimo_email }}d</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="empty"><b>Nenhum follow ativo há mais de {{ limite }} dias sem e-mail.</b></div>{% endif %}
+  </section>
+</div>
+{% endblock %}

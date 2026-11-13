@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% macro campo(label, nome, atual, segredo=False, ph='') %}
+  <label class="f">{{ label }}{% if segredo %} <span class="keystate {{ 'ok' if atual else 'no' }}">{{ atual|mask if atual else 'não definido' }}</span>{% endif %}
+    {% if segredo %}<input type="password" name="{{ nome }}" placeholder="Vazio mantém o atual" autocomplete="new-password">
+    {% else %}<input type="text" name="{{ nome }}" value="{{ atual or '' }}" placeholder="{{ ph }}" autocomplete="off">{% endif %}
+  </label>
+{% endmacro %}
+{% block content %}
+<div class="head">
+  <h1>Credenciais &amp; versões</h1>
+  <p class="mute">Cada alteração cria uma versão; qualquer versão pode ser restaurada</p>
+</div>
+
+<div class="split" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);margin-bottom:24px">
+  <section class="panel">
+    <header><h2>Importar do Excel</h2><span>aba Credentials</span></header>
+    <form method="post" action="/credenciais/importar" enctype="multipart/form-data" class="new" style="grid-template-columns:1fr">
+      <label class="f">Controle SDrs.xlsx<input type="file" name="arquivo" accept=".xlsx" required></label>
+      <p class="mute" style="margin:0;font-size:12.5px">Lê user_email, refresh_token, client_id e client_secret. SDR existente ganha nova versão; novo SDR é criado. O arquivo não é guardado.</p>
+      <button class="btn btn-primary" style="justify-self:start">Importar credenciais</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <header><h2>Configurações do sistema</h2><span>sobrepõem variáveis de ambiente</span></header>
+    <form method="post" action="/credenciais/config" class="new" style="grid-template-columns:1fr 1fr">
+      {% for c in configs %}
+      <label class="f">{{ c.rotulo }}{% if c.segredo %} <span class="keystate {{ 'ok' if c.valor else 'no' }}">{{ c.valor|mask if c.valor else 'não definido' }}</span>{% endif %}
+        {% if c.segredo %}<input type="password" name="{{ c.chave }}" placeholder="Vazio mantém o atual" autocomplete="new-password">
+        {% else %}<input type="text" name="{{ c.chave }}" value="{{ c.valor }}" autocomplete="off">{% endif %}
+        {% if c.ajuda %}<span class="mute" style="font-weight:400">{{ c.ajuda }}</span>{% endif %}
+      </label>
+      {% endfor %}
+      <button class="btn btn-primary" style="justify-self:start;align-self:end">Salvar configurações</button>
+    </form>
+  </section>
+</div>
+
+<details class="panel" style="margin-bottom:20px" {{ 'open' if not sdrs }}>
+  <summary style="padding:11px 14px;cursor:pointer;font-weight:700">Adicionar SDR com credenciais</summary>
+  <form method="post" action="/credenciais/sdr" class="new" style="border-top:1px solid var(--line)">
+    <label class="f">Nome<input type="text" name="nome" required autocomplete="off"></label>
+    <label class="f">E-mail (conta Gmail do SDR)<input type="email" name="email" required autocomplete="off"></label>
+    {{ campo('API Key do Streak', 'streak_api_key', None, True) }}
+    {{ campo('Chave do campo Follow-up', 'follow_up_key', None, False, '1007') }}
+    {{ campo('Client ID', 'client_id', None) }}
+    {{ campo('Client Secret', 'client_secret', None, True) }}
+    {{ campo('Refresh Token', 'refresh_token', None, True) }}
+    <label class="f">Motivo (opcional)<input type="text" name="motivo" placeholder="Cadastro inicial"></label>
+    <button class="btn btn-primary" style="justify-self:start">Adicionar</button>
+  </form>
+</details>
+
+<section class="panel" aria-label="Credenciais por SDR">
+  {% for s in sdrs %}
+  {% set vs = versoes[s.id] %}
+  <details class="sdr {{ '' if s.ativo else 'off' }}" id="sdr-{{ s.id }}">
+    <summary style="grid-template-columns:minmax(150px,1.2fr) minmax(170px,1.5fr) 110px 120px 120px 24px">
+      <span><b>{{ s.nome }}</b></span>
+      <span class="mute" style="overflow:hidden;text-overflow:ellipsis">{{ s.email }}</span>
+      <span class="keystate {{ 'ok' if s.streak_api_key else 'no' }}">Streak {{ 'ok' if s.streak_api_key else '—' }}</span>
+      <span class="keystate {{ 'ok' if s.refresh_token and s.client_id and s.client_secret else 'no' }}">Google {{ 'ok' if s.refresh_token and s.client_id and s.client_secret else '—' }}</span>
+      <span class="num">{{ 'v' ~ vs[0].versao if vs else 'sem versão' }}</span>
+      <svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+    </summary>
+    <div class="sdr-body">
+      <form method="post" action="/credenciais/{{ s.id }}/versao">
+        <fieldset>
+          <legend>Nova versão das credenciais</legend>
+          <div class="grid2">
+            {{ campo('API Key do Streak', 'streak_api_key', s.streak_api_key, True) }}
+            {{ campo('Chave do campo Follow-up', 'follow_up_key', s.follow_up_key, False, '1007') }}
+            {{ campo('Client ID', 'client_id', s.client_id) }}
+            {{ campo('Client Secret', 'client_secret', s.client_secret, True) }}
+            {{ campo('Refresh Token', 'refresh_token', s.refresh_token, True) }}
+            <label class="f">Motivo<input type="text" name="motivo" placeholder="Ex.: troca de token"></label>
+          </div>
+        </fieldset>
+        <button class="btn btn-primary">Salvar como nova versão</button>
+      </form>
+      <div class="side-actions">
+        <form method="post" action="/credenciais/{{ s.id }}/testar">
+          <h4>Testar conexão</h4>
+          <p class="mute" style="margin:0">Valida a chave do Streak e o OAuth do Google sem coletar dados.</p>
+          <button class="btn">Testar agora</button>
+        </form>
+        <div>
+          <h4 style="margin-bottom:6px">Histórico</h4>
+          {% if vs %}
+          <table>
+            <tbody>
+            {% for v in vs[:8] %}
+              <tr>
+                <td style="padding:6px 0"><b>v{{ v.versao }}</b>{% if v.ativa %} <span class="tag reuniao">atual</span>{% endif %}
+                  <div class="mute" style="font-size:12.5px">{{ v.criado_em|dt }} · {{ v.motivo or 'sem motivo' }}</div></td>
+                <td class="num" style="padding:6px 0">{% if not v.ativa %}
+                  <form method="post" action="/credenciais/{{ s.id }}/restaurar/{{ v.id }}" onsubmit="return confirm('Restaurar a v{{ v.versao }}? Cria uma nova versão com esses valores.')">
+                    <button class="btn btn-sm">Restaurar</button></form>{% endif %}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% else %}<p class="mute" style="margin:0">Sem versões ainda.</p>{% endif %}
+        </div>
+      </div>
+    </div>
+  </details>
+  {% else %}
+  <div class="empty"><b>Nenhum SDR.</b>Importe o Excel ou adicione acima.</div>
+  {% endfor %}
+</section>
+<script>
+  if (location.hash) { var d = document.querySelector(location.hash); if (d && d.tagName === 'DETAILS') d.open = true; }
+</script>
+{% endblock %}
