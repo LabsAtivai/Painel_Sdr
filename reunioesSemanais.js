@@ -9,7 +9,7 @@ const EMAIL_MAPPING = {
   'sdr7.ativa@gmail.com': 'Esthela', 
   'sdr0.ativaai@gmail.com': 'Andrade', 
   'sdr6.ativa@gmail.com': 'Leo',  
-  'sdr3.1.ativa@gmail.com': 'Nicole', 
+  'sdr3.1.ativa@gmail.com': 'Rienzi', 
   'sdr2.ativaai@gmail.com': 'Domingues', 
   'sdr1.ativaai@gmail.com': 'Julia', 
   'sdr9.ativa@gmail.com': 'Tura',  

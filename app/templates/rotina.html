@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .rot-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 18px 28px; margin-bottom: 18px; }
+  .rot-bar .grp { display: grid; gap: 4px; }
+  .rot-bar .grp > span { font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .02em; }
+  .rot-bar .go { margin-left: auto; }
+  .head .acoes { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .img-msg { font-size: 12.5px; font-weight: 600; color: var(--ink-3); }
+  .img-msg.ok { color: var(--ok); } .img-msg.err { color: var(--late); }
+  .alerta { margin-bottom: 14px; padding: 10px 14px; border: 1px solid #e6b8b3; border-left: 4px solid var(--late); background: var(--late-soft); border-radius: var(--r); color: #5c1410; }
+  .alerta b { display: block; }
+  .alerta ul { margin: 4px 0 0; padding-left: 18px; }
+  .rodando { margin-bottom: 14px; padding: 10px 14px; border: 1px solid #a9d3d8; border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: var(--r); font-weight: 600; color: #06424a; }
+
+  /* área que vira print para o grupo */
+  .rel { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 22px; }
+  .rel-top { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 16px; }
+  .rel-top h2 { font-size: 18px; letter-spacing: -.01em; }
+  .rel-top p { margin: 0; color: var(--ink-3); font-size: 13px; }
+  .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .kpi { border: 1px solid var(--line-2); background: var(--surface); border-radius: 8px; padding: 12px 14px; }
+  .kpi small { display: block; font-size: 12px; font-weight: 600; color: var(--ink-3); }
+  .kpi b { display: block; font-size: 28px; line-height: 1.15; font-weight: 700; letter-spacing: -.02em; }
+  .kpi em { font-style: normal; font-size: 12px; color: var(--ink-3); }
+  .kpi.a b { color: var(--accent); }
+  .kpi.p b { color: #2456a6; }
+  .kpi.q b { color: var(--ok); }
+  .rel-grid { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(0, 1.5fr); gap: 18px; align-items: start; }
+  .rel-col { display: grid; gap: 18px; }
+  .card { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--raised); }
+  .card > header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 10px 14px; background: var(--bar); color: #fff; }
+  .card > header h3 { font-size: 13px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+  .card > header span { font-size: 12.5px; color: var(--bar-mute); }
+
+  .env { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(70px, 1fr) 38px; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line-2); }
+  .env:last-of-type { border-bottom: 0; }
+  .env .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .env .bar { height: 8px; }
+  .env .bar i { background: var(--accent); }
+  .env .n { text-align: right; font-weight: 700; }
+  .env .n.nd { color: var(--ink-3); font-weight: 500; }
+  .tot { display: flex; justify-content: space-between; padding: 10px 14px; background: var(--surface); border-top: 2px solid var(--ink); font-weight: 700; }
+
+  .res th, .res td { padding: 8px 12px; }
+  .res thead th { background: var(--surface); }
+  .res tfoot td { background: var(--surface); border-top: 2px solid var(--ink); font-weight: 700; border-bottom: 0; }
+  .res td.z { color: var(--ink-3); }
+
+  .sdr-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 9px 14px; background: var(--surface); border-bottom: 1px solid var(--line-2); border-top: 1px solid var(--line); }
+  .card > .sdr-h:first-of-type { border-top: 0; }
+  .sdr-h b { font-size: 14px; }
+  .sdr-h span { font-size: 12.5px; color: var(--ink-3); }
+  .reu { display: grid; grid-template-columns: 84px minmax(0, 1fr) 76px; gap: 10px; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--line-2); }
+  .reu:last-child { border-bottom: 0; }
+  .reu .tt { font-weight: 500; overflow-wrap: anywhere; }
+  .chip { display: inline-flex; justify-content: center; align-items: center; gap: 4px; min-width: 56px; padding: 2px 10px; border-radius: 99px; font-size: 12.5px; font-weight: 700; }
+  .chip.sim { background: var(--ok-soft); color: var(--ok); }
+  .chip.nao { background: var(--late-soft); color: var(--late); }
+  .chip.nd { background: var(--line-2); color: var(--ink-3); }
+  .reu .chip { justify-self: end; }
+  .cab { display: grid; grid-template-columns: 84px minmax(0, 1fr) 76px; gap: 10px; padding: 7px 14px; font-size: 12px; font-weight: 700; color: var(--ink-3); border-bottom: 1px solid var(--line); background: var(--raised); }
+  .cab span:last-child { text-align: right; }
+  .nota { margin: 14px 2px 0; font-size: 12.5px; color: var(--ink-3); }
+
+  @media (max-width: 1000px) {
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rel-grid { grid-template-columns: 1fr; }
+  }
+  @media print {
+    .top, .rot-bar, .alerta, .rodando, .head, .nota { display: none !important; }
+    body { background: #fff; } main { padding: 0; max-width: none; } .rel { border: 0; padding: 0; }
+  }
+</style>
+
+<div class="head">
+  <h1>Rotina diária</h1>
+  <div class="acoes">
+    <span class="img-msg" id="img-msg" role="status"></span>
+    <button type="button" class="btn" id="btn-baixar" title="Salva o relatório como imagem PNG">Baixar imagem</button>
+    <button type="button" class="btn" id="btn-copiar" title="Copia o relatório; depois é só colar (Ctrl+V) no WhatsApp">Copiar imagem</button>
+  </div>
+  <form method="post" action="/rotina/atualizar" class="go" id="rot-form">
+    <input type="hidden" name="env" value="{{ env }}"><input type="hidden" name="reu" value="{{ reu }}">
+    <button class="btn btn-primary {{ 'spin' if rodando }}" {{ 'disabled' if rodando }}>
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-3M4 5v3.5h3.5"/><path d="M4 13a8 8 0 0 0 14.9 3M20 19v-3.5h-3.5"/></svg>
+      <span>{{ 'Coletando…' if rodando else 'Atualizar tudo e gerar relatório' }}</span>
+    </button>
+  </form>
+</div>
+
+{% if rodando %}<div class="rodando" role="status">Coletando Gmail, agenda e confirmações… a página atualiza sozinha quando terminar.</div>{% endif %}
+{% if coleta and not rodando %}
+<div class="alerta" role="alert">
+  <b>Os dados podem estar desatualizados. Clique em “Atualizar tudo e gerar relatório”.</b>
+  <ul>{% for c in coleta %}<li>{{ c.modulo }}: {{ c.texto }}{% if 'falhou' in c.texto %} — veja a aba <a href="/logs">Logs</a>{% endif %}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="rot-bar">
+  <div class="grp"><span>E-mails enviados</span>
+    <nav class="seg" aria-label="Dia dos e-mails enviados">{% for k, l in enviados_opcoes.items() %}<a href="/rotina?env={{ k }}&reu={{ reu }}" {% if env == k %}aria-current="true"{% endif %}>{{ l }}</a>{% endfor %}</nav>
+  </div>
+  <div class="grp"><span>Reuniões</span>
+    <nav class="seg" aria-label="Dia das reuniões">{% for k, l in reunioes_opcoes.items() %}<a href="/rotina?env={{ env }}&reu={{ k }}" {% if reu == k %}aria-current="true"{% endif %}>{{ l }}</a>{% endfor %}</nav>
+  </div>
+</div>
+
+<section class="rel" id="relatorio" aria-label="Relatório para o grupo comercial">
+  <div class="rel-top">
+    <h2>Rotina comercial · SDR</h2>
+    <p>E-mails de {{ d_env|weekday }} {{ d_env.strftime('%d/%m') }} · Reuniões de {{ d_reu|weekday }} {{ d_reu.strftime('%d/%m') }}</p>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi a"><small>E-mails enviados</small><b>{{ total_env }}</b><em>{{ d_env|weekday }} {{ d_env.strftime('%d/%m') }}</em></div>
+    <div class="kpi"><small>Reuniões</small><b>{{ tot.total }}</b><em>{{ d_reu|weekday }} {{ d_reu.strftime('%d/%m') }}</em></div>
+    <div class="kpi p"><small>Propostas</small><b>{{ tot.propostas }}</b><em>de {{ tot.total }} reuniões</em></div>
+    <div class="kpi q"><small>Qualificação</small><b>{{ tot.quali }}</b><em>de {{ tot.total }} reuniões</em></div>
+    <div class="kpi"><small>Confirmadas</small><b>{{ tot.sim }}<span style="font-size:16px;color:var(--ink-3);font-weight:600"> / {{ tot.total }}</span></b><em>{{ tot.nao }} sem confirmação</em></div>
+  </div>
+
+  <div class="rel-grid">
+    <div class="rel-col">
+      <section class="card" aria-labelledby="t-env">
+        <header><h3 id="t-env">E-mails enviados</h3><span>{{ d_env|weekday }} {{ d_env.strftime('%d/%m') }}</span></header>
+        {% for e in enviados %}
+        <div class="env">
+          <span class="nm">{{ e.sdr }}</span>
+          <div class="bar" aria-hidden="true"><i style="width:{{ e.pct }}%"></i></div>
+          <span class="n {{ 'nd' if e.qtd is none }}" {% if e.qtd is none %}title="Sem coleta para este dia"{% endif %}>{{ e.qtd if e.qtd is not none else '—' }}</span>
+        </div>
+        {% else %}<div class="empty"><b>Nenhum SDR ativo.</b></div>{% endfor %}
+        <div class="tot"><span>Total geral</span><span>{{ total_env }}</span></div>
+      </section>
+
+      <section class="card" aria-labelledby="t-res">
+        <header><h3 id="t-res">Reuniões por SDR</h3><span>{{ d_reu|weekday }} {{ d_reu.strftime('%d/%m') }}</span></header>
+        {% if grupos %}
+        <table class="res">
+          <thead><tr><th>SDR</th><th class="num">Reuniões</th><th class="num">Propostas</th><th class="num">Qualificação</th></tr></thead>
+          <tbody>
+          {% for nome, g in grupos %}
+            <tr><td class="client">{{ nome }}</td><td class="num"><b>{{ g.total }}</b></td><td class="num {{ 'z' if not g.propostas }}">{{ g.propostas }}</td><td class="num {{ 'z' if not g.quali }}">{{ g.quali }}</td></tr>
+          {% endfor %}
+          </tbody>
+          <tfoot><tr><td>Total geral</td><td class="num">{{ tot.total }}</td><td class="num">{{ tot.propostas }}</td><td class="num">{{ tot.quali }}</td></tr></tfoot>
+        </table>
+        {% else %}<div class="empty"><b>Sem reuniões neste dia.</b></div>{% endif %}
+      </section>
+    </div>
+
+    <section class="card" aria-labelledby="t-reu">
+      <header><h3 id="t-reu">Reuniões e confirmações</h3><span>{{ d_reu|weekday }} {{ d_reu.strftime('%d/%m') }}</span></header>
+      {% if grupos %}
+      <div class="cab"><span>Tipo</span><span>Título da reunião</span><span>Confirmação</span></div>
+      {% for nome, g in grupos %}
+        <div class="sdr-h"><b>{{ nome }}</b><span>{{ g.total }} {{ 'reunião' if g.total == 1 else 'reuniões' }}{% if g.propostas %} · {{ g.propostas }} {{ 'proposta' if g.propostas == 1 else 'propostas' }}{% endif %}</span></div>
+        {% for i in g.itens %}
+        <div class="reu">
+          <span><span class="tag {{ 'proposta' if i.proposta else 'reuniao' }}">{{ 'Proposta' if i.proposta else 'Reunião' }}</span></span>
+          <span class="tt">{{ i.titulo }}</span>
+          {% if i.conf is none %}<span class="chip nd" title="Ainda não há e-mails do SalesOps coletados para esta data">—</span>
+          {% elif i.conf %}<span class="chip sim" title="E-mail de confirmação encontrado no SalesOps">Sim</span>
+          {% else %}<span class="chip nao" title="Nenhum e-mail de confirmação encontrado no SalesOps">Não</span>{% endif %}
+        </div>
+        {% endfor %}
+      {% endfor %}
+      {% else %}<div class="empty"><b>Nenhuma reunião neste dia.</b>Só eventos com “reunião entre”, “reuniões entre” ou “proposta entre” no título entram aqui.</div>{% endif %}
+    </section>
+  </div>
+</section>
+
+{% if sem_cobertura %}<p class="nota">“—” na confirmação: ainda não há e-mails do SalesOps coletados para essa data.</p>{% endif %}
+{% if sem_dado %}<p class="nota">Sem coleta de e-mails neste dia para: {{ sem_dado|join(', ') }}.</p>{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js"></script>
+<script>
+  // Tira o "print" do relatório inteiro (mesmo o que está fora da tela) em PNG, pronto para o grupo.
+  (function () {
+    var alvo = document.getElementById('relatorio'), msg = document.getElementById('img-msg');
+    var bCopiar = document.getElementById('btn-copiar'), bBaixar = document.getElementById('btn-baixar');
+    function aviso(t, cls) { msg.textContent = t; msg.className = 'img-msg ' + (cls || ''); }
+    function gerar() {
+      if (!window.htmlToImage) { return Promise.reject(new Error('sem internet para carregar o gerador de imagem')); }
+      return window.htmlToImage.toBlob(alvo, { pixelRatio: 2, backgroundColor: '#ffffff', cacheBust: true });
+    }
+    function nome() { return 'rotina-comercial-{{ d_reu.strftime("%Y-%m-%d") }}.png'; }
+    function baixar(blob) {
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome();
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    }
+    bBaixar.addEventListener('click', function () {
+      aviso('Gerando imagem…');
+      gerar().then(function (b) { baixar(b); aviso('Imagem baixada', 'ok'); })
+        .catch(function (e) { aviso('Não deu: ' + e.message, 'err'); });
+    });
+    bCopiar.addEventListener('click', function () {
+      aviso('Gerando imagem…');
+      var pronta = gerar();
+      var copia = (navigator.clipboard && window.ClipboardItem)
+        ? navigator.clipboard.write([new ClipboardItem({ 'image/png': pronta })]).then(function () { aviso('Copiada! Cole no WhatsApp com Ctrl+V', 'ok'); })
+        : pronta.then(function (b) { baixar(b); aviso('Seu navegador não copia imagem; baixei o arquivo', 'ok'); });
+      copia.catch(function (e) {
+        pronta.then(function (b) { baixar(b); aviso('Não consegui copiar; baixei o arquivo', 'ok'); })
+          .catch(function () { aviso('Não deu: ' + e.message, 'err'); });
+      });
+    });
+  })();
+</script>
+{% endblock %}

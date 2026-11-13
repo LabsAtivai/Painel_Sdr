@@ -2,6 +2,7 @@
 import threading
 import time
 from datetime import date, datetime, timedelta
+from email.utils import parseaddr
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.schema import SDR, Agenda, Confirmacao, ConfirmacaoEmail, DadoRelatorio, EmailEnviado, ExecutionLog
 from app.services import gmail_service, streak_service
+from app.services.confirmacao_match import Confirmacoes, buscar_no_gmail
 from app.services.credenciais import cfg
 from app.services.util import norm
 
@@ -107,7 +109,8 @@ def sync_agenda(db: Session, r: Result):
         n = 0
         for ev in events:
             titulo = ev.get("summary") or ""
-            if not any(k in norm(titulo) for k in KEYWORD):
+            n_t = norm(titulo)
+            if not (any(k in n_t for k in KEYWORD) or (n_t.startswith(("proposta", "reuniao")) and "ativa" in n_t)):
                 continue
             try:
                 def _dt(x):
@@ -126,27 +129,47 @@ def sync_agenda(db: Session, r: Result):
     _with_google(db, r, run)
 
 
+def _linha_confirmacao(m: dict, by_email: dict) -> ConfirmacaoEmail:
+    """Converte o e-mail lido do Gmail na linha da tabela confirmacoes_emails."""
+    addr = parseaddr(m["from"])[1].lower()
+    s = by_email.get(addr)
+    return ConfirmacaoEmail(message_id=m["id"], sdr_id=s.id if s else None, remetente=addr[:150], assunto=m["subject"][:300],
+                            texto=norm(m["subject"] + " " + m["text"]) + " " + (m["text"] + m["subject"]).lower(), data=m["date"])
+
+
+def _conferir_pendentes(db: Session, g, by_email: dict) -> int:
+    """Para cada reunião da semana que ainda está "Não", pergunta direto ao Gmail. Salva o e-mail achado."""
+    hoje = datetime.combine(date.today(), datetime.min.time())
+    ini, fim = hoje - timedelta(days=hoje.weekday()), hoje + timedelta(days=8)
+    reunioes = db.scalars(select(Agenda).where(Agenda.data_inicio >= ini, Agenda.data_inicio < fim)).all()
+    conf = Confirmacoes(db, ini, fim)
+    achados = 0
+    for a in reunioes:
+        if conf.status(a.titulo_reuniao, a.email_convidado, a.data_inicio) is not False:  # None = sem cobertura; True = já confirmada
+            continue
+        m = buscar_no_gmail(g, a.titulo_reuniao, a.email_convidado, a.data_inicio)
+        if m and not db.scalar(select(ConfirmacaoEmail.id).where(ConfirmacaoEmail.message_id == m["id"])):
+            db.add(_linha_confirmacao(m, by_email))
+            achados += 1
+    db.flush()
+    return achados
+
+
 def sync_confirmacoes(db: Session, r: Result):
     creds = gmail_service.salesops_creds()
     if not creds:
         r.bad("SALESOPS_CLIENT_ID / SECRET / REFRESH_TOKEN não configurados")
         return
-    from email.utils import parseaddr
-
     days = int(cfg("SYNC_SINCE_DAYS", "7") or 7)
-    with gmail_service.Google(creds) as g:
-        msgs = g.confirmation_messages(days)
     by_email = {s.email.lower(): s for s in db.scalars(select(SDR))}
-    novos = 0
-    for m in msgs:
-        if db.scalar(select(ConfirmacaoEmail.id).where(ConfirmacaoEmail.message_id == m["id"])):
-            continue
-        addr = parseaddr(m["from"])[1].lower()
-        s = by_email.get(addr)
-        db.add(ConfirmacaoEmail(message_id=m["id"], sdr_id=s.id if s else None, remetente=addr[:150], assunto=m["subject"][:300],
-                                texto=norm(m["subject"] + " " + m["text"]) + " " + (m["text"] + m["subject"]).lower(), data=m["date"]))
-        novos += 1
-    db.flush()
+    conhecidos = set(db.scalars(select(ConfirmacaoEmail.message_id)))
+    with gmail_service.Google(creds) as g:
+        msgs = g.confirmation_messages(days, skip_ids=conhecidos)  # só baixa o que ainda não está no banco
+        novos = len(msgs)
+        db.add_all(_linha_confirmacao(m, by_email) for m in msgs)
+        db.flush()
+        achados = _conferir_pendentes(db, g, by_email)  # reuniões ainda "Não": busca direcionada no Gmail
+    novos += achados
     # contagens por remetente/dia (tabela 'confirmacoes' do spec) recompostas a partir dos e-mails da janela
     inicio = datetime.combine(date.today() - timedelta(days=days), datetime.min.time())
     db.execute(delete(Confirmacao).where(Confirmacao.data_registro >= inicio))
@@ -157,7 +180,7 @@ def sync_confirmacoes(db: Session, r: Result):
     for (sid, rem, day), q in cont.items():
         db.add(Confirmacao(sdr_id=sid, remetente=rem, quantidade=q, data_registro=datetime.combine(day, datetime.min.time())))
     db.commit()
-    r.good(f"{len(msgs)} e-mail(s) na janela de {days} dia(s), {novos} novo(s)", novos)
+    r.good(f"{novos} e-mail(s) novo(s) na janela de {days} dia(s) ({achados} achado(s) pela busca direcionada)", novos)
 
 
 JOBS = {"STREAK": sync_streak, "GMAIL": sync_emails, "AGENDA": sync_agenda, "CONFIRMACOES": sync_confirmacoes}

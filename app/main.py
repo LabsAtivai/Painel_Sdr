@@ -8,7 +8,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
 from app.database import SessionLocal, init_db
-from app.routes import agenda, analytics, credenciais, dashboard, emails, logs, sdrs
+from app.routes import agenda, analytics, credenciais, dashboard, emails, logs, rotina, sdrs
 from app.services import seed_xlsx, sync_service
 
 _basic = HTTPBasic(auto_error=False)
@@ -36,7 +36,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Controle SDRs", lifespan=lifespan, dependencies=[Depends(require_auth)])
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
-for r in (dashboard, agenda, emails, analytics, sdrs, credenciais, logs):
+for r in (dashboard, agenda, rotina, emails, analytics, sdrs, credenciais, logs):
     app.include_router(r.router)
 
 

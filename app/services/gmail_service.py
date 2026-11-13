@@ -9,6 +9,8 @@ from app.services.credenciais import cfg
 GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
 CAL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+# o que caracteriza um e-mail de confirmação (usado na coleta em lote e na busca direcionada)
+CONFIRMACAO_Q = '("reuniao entre" OR "reunião entre" OR "proposta entre")'
 
 
 @dataclass
@@ -49,7 +51,7 @@ class Google:
     def _get(self, url, **params):
         r = self._http.get(url, params=params)
         r.raise_for_status()
-        return r.json()
+        return r.json() if r.content else {}
 
     def profile(self) -> str:
         return self._get(f"{GMAIL}/profile").get("emailAddress", "")
@@ -71,16 +73,30 @@ class Google:
                       singleEvents="true", orderBy="startTime", maxResults=500)
         return d.get("items", [])
 
-    def confirmation_messages(self, days: int) -> list[dict]:
-        """E-mails recebidos com "reuniao entre"/"proposta entre": [{id, from, subject, text, date}]."""
-        q = f'newer_than:{days}d ("reuniao entre" OR "reunião entre" OR "proposta entre")'
-        out = []
-        for mid in self._ids(q):
-            m = self._get(f"{GMAIL}/messages/{mid}", format="full")
-            hdr = {h["name"].lower(): h["value"] for h in m["payload"].get("headers", [])}
-            out.append({"id": mid, "from": hdr.get("from", ""), "subject": hdr.get("subject", ""),
-                        "text": _body_text(m["payload"])[:6000], "date": datetime.fromtimestamp(int(m["internalDate"]) / 1000)})
-        return out
+    def _message(self, mid: str) -> dict:
+        """Lê UM e-mail completo: {id, from, subject, text, date}."""
+        m = self._get(f"{GMAIL}/messages/{mid}", format="full")
+        hdr = {h["name"].lower(): h["value"] for h in m["payload"].get("headers", [])}
+        return {"id": mid, "from": hdr.get("from", ""), "subject": hdr.get("subject", ""),
+                "text": _body_text(m["payload"])[:6000], "date": datetime.fromtimestamp(int(m["internalDate"]) / 1000)}
+
+    def confirmation_messages(self, days: int, skip_ids: set[str] | frozenset[str] = frozenset()) -> list[dict]:
+        """E-mails com "reuniao entre"/"proposta entre". Só baixa o corpo dos IDs que NÃO estão em skip_ids."""
+        ids = self._ids(f"newer_than:{days}d {CONFIRMACAO_Q}")
+        return [self._message(mid) for mid in ids if mid not in skip_ids]
+
+    def find_confirmation(self, termos: list[str], inicio: datetime, fim: datetime) -> dict | None:
+        """Busca direcionada: existe e-mail de confirmação que cite algum dos termos entre inicio e fim?
+
+        Custa 1 chamada leve (maxResults=1, só o id); só lê o e-mail se achar. Devolve o e-mail ou None.
+        """
+        termos = list(dict.fromkeys(t.replace('"', " ").strip() for t in termos if t and len(t.strip()) >= 3))
+        if not termos:
+            return None
+        ou = " OR ".join(f'"{t}"' for t in termos)
+        q = f"{CONFIRMACAO_Q} ({ou}) after:{inicio:%Y/%m/%d} before:{fim:%Y/%m/%d}"
+        achados = self._get(f"{GMAIL}/messages", q=q, maxResults=1, fields="messages/id").get("messages", [])
+        return self._message(achados[0]["id"]) if achados else None
 
 
 def _body_text(payload: dict) -> str:

@@ -16,6 +16,25 @@ def nucleo(titulo: str | None) -> str:
     return re.sub(r"\s+", " ", _RUIDO.sub(" ", norm(titulo))).strip()
 
 
+JANELA_DIAS = 45  # mesma janela usada em Confirmacoes.status()
+
+
+def termos_de_busca(titulo: str | None, convidado: str | None) -> list[str]:
+    """O que procurar no Gmail: título inteiro, nome da empresa/contato e e-mail do convidado."""
+    return [t for t in (titulo, nucleo(titulo), convidado) if t and len(t.strip()) >= 3]
+
+
+def buscar_no_gmail(g, titulo: str | None, convidado: str | None, quando: datetime) -> dict | None:
+    """Procura no Gmail do SalesOps o e-mail de confirmação da reunião. Devolve o e-mail ou None."""
+    return g.find_confirmation(termos_de_busca(titulo, convidado),
+                               quando - timedelta(days=JANELA_DIAS), quando + timedelta(days=2))
+
+
+def confirmou_no_gmail(g, titulo: str | None, convidado: str | None, quando: datetime) -> bool:
+    """True = "Sim" (verde), False = "Não" (vermelho)."""
+    return buscar_no_gmail(g, titulo, convidado, quando) is not None
+
+
 class Confirmacoes:
     def __init__(self, db: Session, ini: datetime, fim: datetime):
         self.cobertura = db.scalar(select(func.min(ConfirmacaoEmail.data)))

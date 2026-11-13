@@ -15,7 +15,7 @@
   <div class="top-in">
     <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>Controle SDRs</div>
     <nav class="tabs" aria-label="Seções">
-      {% for key, label, href in [('geral','Dashboard','/'),('follows','Follows','/follows'),('agenda','Agenda','/agenda'),('emails','Disparos','/emails'),('analytics','Analytics','/analytics'),('sdrs','SDRs','/sdrs'),('credenciais','Credenciais','/credenciais'),('logs','Logs','/logs')] %}
+      {% for key, label, href in [('geral','Dashboard','/'),('follows','Follows','/follows'),('agenda','Agenda','/agenda'),('rotina','Rotina diária','/rotina'),('emails','Disparos','/emails'),('analytics','Analytics','/analytics'),('sdrs','SDRs','/sdrs'),('credenciais','Credenciais','/credenciais'),('logs','Logs','/logs')] %}
       <a class="tab" href="{{ href }}" {% if page == key %}aria-current="page"{% endif %}>{{ label }}</a>
       {% endfor %}
     </nav>
